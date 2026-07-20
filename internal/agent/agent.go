@@ -237,6 +237,35 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 		}
 
 		a.checkGuardrails(toolCalls, results)
+
+		// Record turn insights.
+		if a.insights != nil {
+			toolNames := make([]string, 0, len(toolCalls))
+			for _, tc := range toolCalls {
+				toolNames = append(toolNames, tc.Name)
+			}
+			tokensIn, tokensOut := 0, 0
+			if lu := a.LastUsage(); lu != nil {
+				tokensIn = lu.InputTokens
+				tokensOut = lu.OutputTokens
+			}
+			a.insights.RecordTurn(tokensIn, tokensOut, toolNames, "")
+			a.skillTurns++
+		}
+
+		// Background review check (non-blocking).
+		if a.reviewer != nil && a.reviewer.ShouldRun(step) {
+			go func() {
+				result := a.reviewer.RunReview(context.Background(), sess.Snapshot(), a.prov, "")
+				if result != nil && result.Suggestion != "" {
+					a.sink.Emit(event.Event{
+						Type:      "notification",
+						TextDelta: "Background review: " + result.Suggestion,
+					})
+				}
+			}()
+		}
+
 		a.maybeCompact(sess)
 	}
 	return nil
