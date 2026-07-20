@@ -11,6 +11,7 @@ import (
 	"bounty/internal/agent"
 	"bounty/internal/config"
 	"bounty/internal/control"
+	"bounty/internal/environment"
 	"bounty/internal/event"
 	"bounty/internal/hook"
 	"bounty/internal/mcp"
@@ -60,8 +61,12 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		return nil, fmt.Errorf("provider %q not found", provName)
 	}
 
-	// 3. Load API key
-	apiKey, err := secrets.LoadFromEnv(provCfg.APIKeyEnv)
+	// 3. Load API key pool
+	keyPool, err := secrets.NewPool(provCfg.APIKeyEnv)
+	if err != nil {
+		return nil, fmt.Errorf("api key for %s: %w", provName, err)
+	}
+	apiKey, err := keyPool.Get()
 	if err != nil {
 		return nil, fmt.Errorf("api key for %s: %w", provName, err)
 	}
@@ -248,6 +253,11 @@ func dataDir() string {
 func buildSystemPrompt(cfg *config.Config, docs []memory.Doc, skills []skill.IndexEntry) string {
 	var sb strings.Builder
 	sb.WriteString("You are Bounty, a general-purpose AI agent. You help users with software engineering, research, data analysis, and automation tasks.\n\n")
+
+	// Environment info (cached — stable across turns)
+	sb.WriteString(environment.Probe().Block())
+	sb.WriteString("\n")
+
 	if cfg.Sandbox.WorkspaceRoot != "" {
 		sb.WriteString("## Workspace\n" + cfg.Sandbox.WorkspaceRoot + "\n\n")
 	}

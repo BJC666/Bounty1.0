@@ -11,6 +11,7 @@ import (
 	"bounty/internal/config"
 	"bounty/internal/event"
 	"bounty/internal/permission"
+	"bounty/internal/repair"
 )
 
 func main() {
@@ -33,7 +34,7 @@ func main() {
 
 func chatCmd() {
 	wd, _ := os.Getwd()
-	cfg, err := config.Load(wd)
+	cfg, err := repair.SafeLoad(wd)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -101,7 +102,7 @@ func runCmd() {
 	}
 	prompt := os.Args[2]
 	wd, _ := os.Getwd()
-	cfg, err := config.Load(wd)
+	cfg, err := repair.SafeLoad(wd)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -126,6 +127,20 @@ func runCmd() {
 }
 
 func doctorCmd() {
+	// Check for --repair flag first
+	for _, arg := range os.Args {
+		if arg == "--repair" {
+			fmt.Println("Attempting config repair from snapshot...")
+			cfg, err := repair.RestoreSnapshot()
+			if err != nil {
+				fmt.Printf("❌ Repair failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("✅ Restored config: model=%s, providers=%d\n", cfg.DefaultModel, len(cfg.Providers))
+			return
+		}
+	}
+
 	fmt.Println("Bounty Doctor — checking configuration...")
 	wd, _ := os.Getwd()
 	cfg, err := config.Load(wd)

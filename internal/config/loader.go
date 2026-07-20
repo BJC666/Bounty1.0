@@ -27,6 +27,13 @@ func Load(projectRoot string) (*Config, error) {
 	return cfg, nil
 }
 
+// LoadFile loads a specific TOML file on top of defaults (no user/project merge).
+func LoadFile(path string) (*Config, error) {
+	cfg := Defaults()
+	loadTOML(path, cfg)
+	return cfg, nil
+}
+
 func loadTOML(path string, cfg *Config) {
 	if _, err := os.Stat(path); err != nil {
 		return
