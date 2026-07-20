@@ -111,6 +111,11 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		Hooks:       hookAdapter{runner: hookRunner},
 	})
 
+	// 12b. Register subagent tools onto the same registry
+	reg.Add(agent.NewTaskTool(ag, cfg.Agent.MaxSubagentDepth))
+	reg.Add(agent.NewReadOnlyTaskTool(ag, cfg.Agent.MaxSubagentDepth))
+	reg.Add(agent.NewFleetTool(ag, cfg.Agent.MaxSubagentDepth, cfg.Agent.MaxParallelWriters))
+
 	// 13. Open store
 	st, err := store.New(filepath.Join(dataDir(), "bounty.db"))
 	if err != nil {
