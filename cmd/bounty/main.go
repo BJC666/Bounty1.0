@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"bounty/internal/boot"
+	"bounty/internal/cli"
 	"bounty/internal/config"
 	"bounty/internal/event"
 	"bounty/internal/permission"
@@ -36,11 +35,11 @@ func chatCmd() {
 	wd, _ := os.Getwd()
 	cfg, err := config.Load(wd)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Check for --list flag
+	// Check for --list first
 	for _, arg := range os.Args {
 		if arg == "--list" {
 			listSessions(cfg)
@@ -59,56 +58,14 @@ func chatCmd() {
 	var sessionID string
 	if resumeID != "" {
 		sessionID = resumeID
-		fmt.Printf("Resuming session %s...\n", resumeID)
 	} else {
 		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
 	}
 
-	ctrl, err := boot.Build(cfg, boot.Options{
-		MaxSteps:  cfg.Agent.MaxSteps,
-		Sink:      &consoleSink{},
-		Posture:   permission.PostureAuto,
-		SessionID: sessionID,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error building agent: %v\n", err)
+	// Launch TUI (boot.Build is called inside RunTUI with the TUI sink)
+	if err := cli.RunTUI(cfg, sessionID); err != nil {
+		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
 		os.Exit(1)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	go func() { <-sigCh; cancel() }()
-
-	fmt.Println("Bounty Agent — type your message (/exit to quit, /save to persist)")
-	for {
-		fmt.Print("> ")
-		var input string
-		if _, err := fmt.Scanln(&input); err != nil {
-			break
-		}
-		if input == "/exit" {
-			break
-		}
-		if input == "/save" {
-			if err := ctrl.SaveTurn(); err != nil {
-				fmt.Fprintf(os.Stderr, "Save error: %v\n", err)
-			} else {
-				fmt.Println("Session saved.")
-			}
-			continue
-		}
-		if input == "" {
-			continue
-		}
-
-		if err := ctrl.Send(ctx, input); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		}
-		// Auto-save after each turn
-		ctrl.SaveTurn()
 	}
 }
 
