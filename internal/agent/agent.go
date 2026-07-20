@@ -64,6 +64,8 @@ type Options struct {
 	Asker        Asker
 	Checkpointer Checkpointer
 	MaxToolOut   int
+	Insights     *SessionInsights
+	Reviewer     *BackgroundReviewer
 }
 
 // Agent is the core turn-taking loop: stream LLM output, collect tool calls,
@@ -93,6 +95,11 @@ type Agent struct {
 	lastPrefixShape     provider.PrefixShape
 	haveLastPrefixShape bool
 	cacheStats          provider.CacheStats
+
+	// Self-improvement
+	insights   *SessionInsights
+	reviewer   *BackgroundReviewer
+	skillTurns int // turns since last skill use
 }
 
 // New creates an Agent. It applies defaults for zero-valued Options.
@@ -119,6 +126,8 @@ func New(prov provider.Provider, tools *tool.Registry, session *Session, opts Op
 		checkpointer: opts.Checkpointer,
 		maxToolOut:   opts.MaxToolOut,
 		stormSig:     make(map[string]int),
+		insights:     opts.Insights,
+		reviewer:     opts.Reviewer,
 	}
 }
 

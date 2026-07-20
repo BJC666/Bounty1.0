@@ -1,0 +1,18 @@
+[Unit]
+Description=Bounty AI Agent Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bounty
+Group=bounty
+WorkingDirectory=/opt/bounty
+EnvironmentFile=/opt/bounty/.env
+ExecStart=/usr/local/bin/bounty serve
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
