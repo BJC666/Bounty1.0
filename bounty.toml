@@ -1,0 +1,16 @@
+# Bounty Agent — example project configuration
+config_version = 1
+default_model = "deepseek/deepseek-v4-pro"
+
+[[providers]]
+name = "deepseek"
+kind = "openai"
+base_url = "https://api.deepseek.com"
+models = ["deepseek-v4-flash", "deepseek-v4-pro"]
+api_key_env = "DEEPSEEK_API_KEY"
+context_window = 1000000
+
+[agent]
+temperature = 0.0
+compact_ratio = 0.8
+max_steps = 50
