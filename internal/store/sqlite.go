@@ -102,7 +102,12 @@ func (s *Store) SaveMessages(sessionID string, msgs []Message) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// Rebuild FTS index so newly inserted messages are searchable.
+	s.db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`)
+	return nil
 }
 
 func (s *Store) LoadMessages(sessionID string) ([]Message, error) {
