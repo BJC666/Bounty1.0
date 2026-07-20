@@ -20,4 +20,5 @@ func RegisterAll(reg *tool.Registry, opts ToolOptions) {
 	reg.Add(&TodoWriteTool{})
 	reg.Add(&WebFetchTool{})
 	reg.Add(&WebSearchTool{})
+	reg.Add(&CodeIndexTool{})
 }
