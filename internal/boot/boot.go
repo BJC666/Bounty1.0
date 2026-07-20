@@ -112,6 +112,15 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	skillStore := skill.NewStore()
 	skillStore.Discover(cfg.Skills.Paths)
 
+	// 7a. Skill curator — lifecycle management (active -> inactive -> archived)
+	curator := skill.NewCurator(skill.CuratorConfig{Enabled: true}, skillStore, dataDir())
+
+	// Run lifecycle check on startup
+	report := curator.Run()
+	if report != nil && len(report.Inactivated)+len(report.Archived) > 0 {
+		fmt.Fprintf(os.Stderr, "Curator: %s\n", report.String())
+	}
+
 	// 7b. Load commands
 	cmdStore := plugin.NewCommandStore()
 	cmdStore.Discover([]string{
