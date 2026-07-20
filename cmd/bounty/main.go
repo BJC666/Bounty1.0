@@ -12,12 +12,14 @@ import (
 	"bounty/internal/config"
 	"bounty/internal/event"
 	"bounty/internal/permission"
+	"bounty/internal/remote"
 	"bounty/internal/repair"
+	"strings"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: bounty chat|run|serve|doctor\n")
+		fmt.Fprintf(os.Stderr, "Usage: bounty chat|run|serve|doctor|remote\n")
 		os.Exit(1)
 	}
 	switch os.Args[1] {
@@ -29,6 +31,8 @@ func main() {
 		serveCmd()
 	case "doctor":
 		doctorCmd()
+	case "remote":
+		remoteCmd()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
 		os.Exit(1)
@@ -194,6 +198,20 @@ func doctorCmd() {
 	}
 	fmt.Printf("   Max steps: %d\n", cfg.Agent.MaxSteps)
 	fmt.Printf("   Compact ratio: %.1f\n", cfg.Agent.CompactRatio)
+}
+
+func remoteCmd() {
+	if len(os.Args) < 4 {
+		fmt.Fprintf(os.Stderr, "Usage: bounty remote <host> <command>\n")
+		os.Exit(1)
+	}
+	sess := remote.NewSSH(os.Args[2], os.Getenv("USER"), "", 22)
+	output, err := sess.Run(context.Background(), strings.Join(os.Args[3:], " "))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(output)
 }
 
 // consoleSink prints events to the terminal.

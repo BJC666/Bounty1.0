@@ -8,6 +8,7 @@ import (
 
 type ToolOptions struct {
 	BashTimeout time.Duration
+	ProjectRoot string
 }
 
 func RegisterAll(reg *tool.Registry, opts ToolOptions) {
@@ -21,4 +22,5 @@ func RegisterAll(reg *tool.Registry, opts ToolOptions) {
 	reg.Add(&WebFetchTool{})
 	reg.Add(&WebSearchTool{})
 	reg.Add(&CodeIndexTool{})
+	reg.Add(&RememberTool{ProjectRoot: opts.ProjectRoot})
 }

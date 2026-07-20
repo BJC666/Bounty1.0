@@ -1,0 +1,23 @@
+{
+  "name": "bounty-agent",
+  "version": "0.3.0",
+  "description": "General-purpose AI agent framework — single binary, multi-provider, self-improving",
+  "bin": {
+    "bounty": "./bin/bounty"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "install.js",
+    "bin/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bounty/bounty"
+  },
+  "keywords": ["ai", "agent", "llm", "cli", "coding-assistant"],
+  "license": "MIT",
+  "os": ["darwin", "linux", "win32"],
+  "cpu": ["x64", "arm64"]
+}

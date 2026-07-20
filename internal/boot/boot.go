@@ -24,7 +24,9 @@ import (
 	"bounty/internal/plugin"
 	"bounty/internal/provider"
 	"bounty/internal/provider/anthropic"
+	"bounty/internal/provider/ollama"
 	"bounty/internal/provider/openai"
+	"bounty/internal/provider/openai_native"
 	"bounty/internal/secrets"
 	"bounty/internal/skill"
 	"bounty/internal/store"
@@ -66,14 +68,17 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		return nil, fmt.Errorf("provider %q not found", provName)
 	}
 
-	// 3. Load API key pool
-	keyPool, err := secrets.NewPool(provCfg.APIKeyEnv)
-	if err != nil {
-		return nil, fmt.Errorf("api key for %s: %w", provName, err)
-	}
-	apiKey, err := keyPool.Get()
-	if err != nil {
-		return nil, fmt.Errorf("api key for %s: %w", provName, err)
+	// 3. Load API key pool (not needed for ollama)
+	var apiKey string
+	if provCfg.Kind != "ollama" {
+		keyPool, err := secrets.NewPool(provCfg.APIKeyEnv)
+		if err != nil {
+			return nil, fmt.Errorf("api key for %s: %w", provName, err)
+		}
+		apiKey, err = keyPool.Get()
+		if err != nil {
+			return nil, fmt.Errorf("api key for %s: %w", provName, err)
+		}
 	}
 
 	// 4. Create Provider
@@ -83,13 +88,21 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		prov = openai.New(provCfg.BaseURL, apiKey, modelName, provCfg.ContextWindow)
 	case "anthropic":
 		prov = anthropic.New(provCfg.BaseURL, apiKey, modelName, provCfg.ContextWindow)
+	case "ollama":
+		var err error
+		prov, err = ollama.New(provCfg.BaseURL, modelName)
+		if err != nil {
+			return nil, fmt.Errorf("ollama: %w", err)
+		}
+	case "openai_native":
+		prov = openai_native.New(apiKey, modelName, provCfg.ContextWindow)
 	default:
 		return nil, fmt.Errorf("unknown provider kind: %s", provCfg.Kind)
 	}
 
 	// 5. Create tool registry + register builtins
 	reg := tool.NewRegistry()
-	builtin.RegisterAll(reg, builtin.ToolOptions{BashTimeout: 120e9})
+	builtin.RegisterAll(reg, builtin.ToolOptions{BashTimeout: 120e9, ProjectRoot: cfg.Sandbox.WorkspaceRoot})
 
 	// 5b. Connect MCP plugins
 	mcpHost := mcp.NewHost()
