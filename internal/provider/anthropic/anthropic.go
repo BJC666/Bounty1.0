@@ -132,6 +132,9 @@ type sseContentBlock struct {
 	Name string `json:"name"`
 }
 
+// Version returns a stable identifier for this provider implementation.
+func (p *Provider) Version() string { return "anthropic/2023-06-01" }
+
 func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tools []json.RawMessage, opts provider.StreamOpts) (<-chan provider.StreamEvent, error) {
 	// Separate system prompt from messages
 	var systemBlocks []textBlock

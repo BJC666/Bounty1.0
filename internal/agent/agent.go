@@ -158,6 +158,16 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 		messages := sess.Snapshot()
 		schemas := a.tools.Schemas()
 
+		// Compute prompt cache shape to track cache hits and misses.
+		if provWithCache, ok := a.prov.(interface{ Version() string }); ok {
+			shape := provider.ComputeShape(sess.SystemPrompt, schemas, provWithCache.Version())
+			if a.haveLastPrefixShape {
+				a.cacheStats.Record(a.lastPrefixShape, shape)
+			}
+			a.lastPrefixShape = shape
+			a.haveLastPrefixShape = true
+		}
+
 		ch, err := a.prov.Stream(ctx, messages, schemas, provider.StreamOpts{Temperature: a.temp})
 		if err != nil {
 			return fmt.Errorf("step %d: %w", step, err)
@@ -346,4 +356,14 @@ func extractWritePath(args json.RawMessage) (string, bool) {
 		return params.Path, true
 	}
 	return "", false
+}
+
+// CacheStats returns the aggregate prompt cache performance.
+func (a *Agent) CacheStats() provider.CacheStats {
+	return a.cacheStats
+}
+
+// LastUsage returns the most recent provider usage snapshot.
+func (a *Agent) LastUsage() *provider.Usage {
+	return a.lastUsage.Load()
 }
