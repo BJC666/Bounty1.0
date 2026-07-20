@@ -40,11 +40,35 @@ func chatCmd() {
 		os.Exit(1)
 	}
 
+	// Check for --list flag
+	for _, arg := range os.Args {
+		if arg == "--list" {
+			listSessions(cfg)
+			return
+		}
+	}
+
+	// Check for --resume flag
+	var resumeID string
+	for i, arg := range os.Args {
+		if arg == "--resume" && i+1 < len(os.Args) {
+			resumeID = os.Args[i+1]
+		}
+	}
+
+	var sessionID string
+	if resumeID != "" {
+		sessionID = resumeID
+		fmt.Printf("Resuming session %s...\n", resumeID)
+	} else {
+		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+	}
+
 	ctrl, err := boot.Build(cfg, boot.Options{
 		MaxSteps:  cfg.Agent.MaxSteps,
 		Sink:      &consoleSink{},
 		Posture:   permission.PostureAuto,
-		SessionID: fmt.Sprintf("session-%d", time.Now().UnixNano()),
+		SessionID: sessionID,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error building agent: %v\n", err)
@@ -58,7 +82,7 @@ func chatCmd() {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() { <-sigCh; cancel() }()
 
-	fmt.Println("Bounty Agent — type your message (/exit to quit)")
+	fmt.Println("Bounty Agent — type your message (/exit to quit, /save to persist)")
 	for {
 		fmt.Print("> ")
 		var input string
@@ -68,6 +92,14 @@ func chatCmd() {
 		if input == "/exit" {
 			break
 		}
+		if input == "/save" {
+			if err := ctrl.SaveTurn(); err != nil {
+				fmt.Fprintf(os.Stderr, "Save error: %v\n", err)
+			} else {
+				fmt.Println("Session saved.")
+			}
+			continue
+		}
 		if input == "" {
 			continue
 		}
@@ -75,6 +107,33 @@ func chatCmd() {
 		if err := ctrl.Send(ctx, input); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		}
+		// Auto-save after each turn
+		ctrl.SaveTurn()
+	}
+}
+
+func listSessions(cfg *config.Config) {
+	// Quick bootstrap just for listing
+	ctrl, err := boot.Build(cfg, boot.Options{
+		Sink:      &consoleSink{},
+		Posture:   permission.PostureAuto,
+		SessionID: "list-only",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	sessions, err := ctrl.ListSessions(20)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error listing sessions: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Recent sessions:")
+	for _, s := range sessions {
+		t := time.Unix(s.UpdatedAt, 0).Format("2006-01-02 15:04")
+		fmt.Printf("  %s  [%s] %s\n", s.ID[:20], t, s.Title)
 	}
 }
 

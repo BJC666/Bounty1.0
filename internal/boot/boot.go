@@ -117,10 +117,39 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		return nil, fmt.Errorf("open store: %w", err)
 	}
 
+	// 13b. Restore existing session messages if resuming
+	sessionTitle := "New Session"
+	if opts.SessionID != "" {
+		if existing, loadErr := st.LoadSession(opts.SessionID); loadErr == nil {
+			sessionTitle = existing.Title
+			// Restore system prompt from saved session
+			if existing.SystemPrompt != "" {
+				session = agent.NewSession(existing.SystemPrompt)
+			}
+			// Load existing messages
+			if msgs, loadErr := st.LoadMessages(opts.SessionID); loadErr == nil && len(msgs) > 0 {
+				for _, m := range msgs {
+					var toolCalls []provider.ToolCall
+					if m.ToolCalls != "" {
+						json.Unmarshal([]byte(m.ToolCalls), &toolCalls)
+					}
+					session.Add(provider.Message{
+						Role:      m.Role,
+						Content:   m.Content,
+						ToolCalls: toolCalls,
+						ToolName:  m.ToolName,
+					})
+				}
+			}
+			// Update the agent to use the restored session
+			ag.SetSession(session)
+		}
+	}
+
 	// 14. Save session
 	if opts.SessionID != "" {
 		st.SaveSession(&store.Session{
-			ID: opts.SessionID, Title: "New Session",
+			ID: opts.SessionID, Title: sessionTitle,
 			Model: modelName, Provider: provName, SystemPrompt: systemPrompt,
 		})
 	}

@@ -2,12 +2,14 @@ package control
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 
 	"bounty/internal/agent"
 	"bounty/internal/event"
 	"bounty/internal/hook"
 	"bounty/internal/permission"
+	"bounty/internal/provider"
 	"bounty/internal/skill"
 	"bounty/internal/store"
 )
@@ -103,4 +105,63 @@ func (c *Controller) AddPendingMemory(note string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pending = append(c.pending, note)
+}
+
+// AgentSession returns the current agent session for persistence access.
+func (c *Controller) AgentSession() *agent.Session {
+	return c.runner.(*agent.Agent).Session()
+}
+
+// SaveTurn persists the current conversation state to the store.
+func (c *Controller) SaveTurn() error {
+	sess := c.AgentSession()
+	messages := sess.Snapshot()
+
+	// Update session metadata
+	sessData := &store.Session{
+		ID:           c.sessionID,
+		Title:        extractTitle(messages),
+		SystemPrompt: sess.SystemPrompt,
+		Source:       "cli",
+	}
+	if err := c.store.SaveSession(sessData); err != nil {
+		return err
+	}
+
+	// Save messages
+	var storeMsgs []store.Message
+	for _, m := range messages {
+		toolCallsJSON := ""
+		if len(m.ToolCalls) > 0 {
+			b, _ := json.Marshal(m.ToolCalls)
+			toolCallsJSON = string(b)
+		}
+		storeMsgs = append(storeMsgs, store.Message{
+			SessionID: c.sessionID,
+			Role:      m.Role,
+			Content:   m.Content,
+			ToolCalls: toolCallsJSON,
+			ToolName:  m.ToolName,
+		})
+	}
+	return c.store.SaveMessages(c.sessionID, storeMsgs)
+}
+
+// ListSessions returns recent sessions from the store.
+func (c *Controller) ListSessions(limit int) ([]store.Session, error) {
+	return c.store.ListSessions(limit)
+}
+
+// extractTitle extracts a human-readable title from the first user message.
+func extractTitle(messages []provider.Message) string {
+	for _, m := range messages {
+		if m.Role == "user" && m.Content != "" {
+			title := m.Content
+			if len(title) > 80 {
+				title = title[:80] + "..."
+			}
+			return title
+		}
+	}
+	return "New Session"
 }
