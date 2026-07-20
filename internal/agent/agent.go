@@ -46,31 +46,41 @@ type Asker interface {
 	Ask(ctx context.Context, question string, options []string) (string, error)
 }
 
+// Checkpointer captures file state before edits and persists turn metadata so
+// the agent can rewind to a previous turn.
+type Checkpointer interface {
+	Capture(path string) error
+	SaveTurn(prompt string, msgIndex int) error
+	GetTurn() int
+}
+
 // Options configures an Agent. Zero values get sensible defaults.
 type Options struct {
-	MaxSteps    int
-	Temperature float64
-	Sink        event.Sink
-	Gate        Gate
-	Hooks       ToolHooks
-	Asker       Asker
-	MaxToolOut  int
+	MaxSteps     int
+	Temperature  float64
+	Sink         event.Sink
+	Gate         Gate
+	Hooks        ToolHooks
+	Asker        Asker
+	Checkpointer Checkpointer
+	MaxToolOut   int
 }
 
 // Agent is the core turn-taking loop: stream LLM output, collect tool calls,
 // execute them, feed results back, repeat.
 type Agent struct {
-	prov       provider.Provider
-	tools      *tool.Registry
-	session    *Session
-	sessMu     sync.Mutex
-	maxSteps   int
-	temp       float64
-	sink       event.Sink
-	gate       Gate
-	hooks      ToolHooks
-	asker      Asker
-	maxToolOut int
+	prov         provider.Provider
+	tools        *tool.Registry
+	session      *Session
+	sessMu       sync.Mutex
+	maxSteps     int
+	temp         float64
+	sink         event.Sink
+	gate         Gate
+	hooks        ToolHooks
+	asker        Asker
+	checkpointer Checkpointer
+	maxToolOut   int
 
 	// Guardrail state
 	stormSig          map[string]int
@@ -92,17 +102,18 @@ func New(prov provider.Provider, tools *tool.Registry, session *Session, opts Op
 		opts.Sink = event.Discard
 	}
 	return &Agent{
-		prov:       prov,
-		tools:      tools,
-		session:    session,
-		maxSteps:   opts.MaxSteps,
-		temp:       opts.Temperature,
-		sink:       opts.Sink,
-		gate:       opts.Gate,
-		hooks:      opts.Hooks,
-		asker:      opts.Asker,
-		maxToolOut: opts.MaxToolOut,
-		stormSig:   make(map[string]int),
+		prov:         prov,
+		tools:        tools,
+		session:      session,
+		maxSteps:     opts.MaxSteps,
+		temp:         opts.Temperature,
+		sink:         opts.Sink,
+		gate:         opts.Gate,
+		hooks:        opts.Hooks,
+		asker:        opts.Asker,
+		checkpointer: opts.Checkpointer,
+		maxToolOut:   opts.MaxToolOut,
+		stormSig:     make(map[string]int),
 	}
 }
 
@@ -126,6 +137,12 @@ func (a *Agent) Session() *Session {
 // requesting tool calls or the step limit is reached.
 func (a *Agent) Run(ctx context.Context, input string) error {
 	sess := a.Session()
+	turnMsgIndex := sess.Len() // snapshot before adding user message
+
+	if a.checkpointer != nil {
+		a.checkpointer.SaveTurn(input, turnMsgIndex)
+	}
+
 	sess.Add(provider.Message{Role: "user", Content: input})
 
 	for step := 0; step < a.maxSteps; step++ {
@@ -264,6 +281,13 @@ func (a *Agent) executeOne(ctx context.Context, tc provider.ToolCall) toolResult
 		}
 	}
 
+	// Capture pre-edit state for checkpoints (write tools only)
+	if !t.ReadOnly() && a.checkpointer != nil {
+		if path, ok := extractWritePath(tc.Args); ok {
+			a.checkpointer.Capture(path)
+		}
+	}
+
 	result, err := t.Execute(ctx, tc.Args)
 
 	if len(result) > a.maxToolOut {
@@ -297,4 +321,24 @@ func errStr(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// extractWritePath pulls the target file path from tool arguments. It handles
+// both "file_path" (used by write_file, edit_file) and "path" (used by other
+// tools that may write files).
+func extractWritePath(args json.RawMessage) (string, bool) {
+	var params struct {
+		FilePath string `json:"file_path"`
+		Path     string `json:"path"`
+	}
+	if err := json.Unmarshal(args, &params); err != nil {
+		return "", false
+	}
+	if params.FilePath != "" {
+		return params.FilePath, true
+	}
+	if params.Path != "" {
+		return params.Path, true
+	}
+	return "", false
 }
