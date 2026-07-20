@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"bounty/internal/memory"
+	"bounty/internal/tool"
 )
 
 // RememberTool persists facts to project auto-memory.
@@ -15,6 +16,7 @@ type RememberTool struct {
 
 func (r *RememberTool) Name() string   { return "remember" }
 func (r *RememberTool) ReadOnly() bool { return false }
+func (r *RememberTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (r *RememberTool) Description() string {
 	return "Save a durable fact to project memory. Use for conventions, preferences, and lessons learned."
 }

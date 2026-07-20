@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"bounty/internal/tool"
 )
 
 type EditFileTool struct{}
 
 func (EditFileTool) Name() string        { return "edit_file" }
 func (EditFileTool) ReadOnly() bool      { return false }
+func (EditFileTool) Owner() tool.Owner   { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (EditFileTool) Description() string { return "Performs exact string replacement in a file. old_string must match exactly and be unique." }
 func (EditFileTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["file_path","old_string","new_string"]}`)

@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"bounty/internal/tool"
 )
 
 type WebFetchTool struct{}
 
 func (WebFetchTool) Name() string        { return "web_fetch" }
 func (WebFetchTool) ReadOnly() bool      { return true }
+func (WebFetchTool) Owner() tool.Owner   { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (WebFetchTool) Description() string { return "Fetches a URL and returns its content as plain text." }
 func (WebFetchTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","format":"uri","description":"The URL to fetch"}},"required":["url"]}`)

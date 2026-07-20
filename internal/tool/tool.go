@@ -33,6 +33,7 @@ type Registry struct {
 	tools  []Tool
 	cached []json.RawMessage
 	dirty  bool
+	owners map[string]Owner // tool name → owner
 }
 
 func NewRegistry() *Registry { return &Registry{} }
@@ -42,6 +43,13 @@ func (r *Registry) Add(t Tool) {
 	defer r.mu.Unlock()
 	r.tools = append(r.tools, t)
 	r.dirty = true
+	// Track ownership
+	if owned, ok := t.(Owned); ok {
+		if r.owners == nil {
+			r.owners = make(map[string]Owner)
+		}
+		r.owners[t.Name()] = owned.Owner()
+	}
 }
 
 func (r *Registry) Remove(name string) {
@@ -103,5 +111,30 @@ func (r *Registry) All() []Tool {
 	defer r.mu.RUnlock()
 	result := make([]Tool, len(r.tools))
 	copy(result, r.tools)
+	return result
+}
+
+// OwnerOf returns the owner of a tool, or Owner{Kind:"unknown"}.
+func (r *Registry) OwnerOf(name string) Owner {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if o, ok := r.owners[name]; ok {
+		return o
+	}
+	return Owner{Kind: "unknown"}
+}
+
+// ToolsByOwner returns tools grouped by owner kind.
+func (r *Registry) ToolsByOwner() map[string][]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make(map[string][]string)
+	for _, t := range r.tools {
+		kind := "unknown"
+		if owned, ok := t.(Owned); ok {
+			kind = owned.Owner().Kind
+		}
+		result[kind] = append(result[kind], t.Name())
+	}
 	return result
 }

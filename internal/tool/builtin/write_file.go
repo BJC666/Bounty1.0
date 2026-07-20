@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"bounty/internal/tool"
 )
 
 type WriteFileTool struct{}
 
 func (WriteFileTool) Name() string        { return "write_file" }
 func (WriteFileTool) ReadOnly() bool      { return false }
+func (WriteFileTool) Owner() tool.Owner   { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (WriteFileTool) Description() string { return "Creates or overwrites a file at the specified path." }
 func (WriteFileTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","description":"The absolute path to the file to write"},"content":{"type":"string","description":"The content to write to the file"}},"required":["file_path","content"]}`)

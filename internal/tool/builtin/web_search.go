@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"bounty/internal/tool"
 )
 
 type WebSearchTool struct {
@@ -16,6 +18,7 @@ type WebSearchTool struct {
 
 func (w *WebSearchTool) Name() string   { return "web_search" }
 func (w *WebSearchTool) ReadOnly() bool { return true }
+func (w *WebSearchTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (w *WebSearchTool) Description() string {
 	return "Search the web. Returns result blocks with titles, URLs, and snippets."
 }

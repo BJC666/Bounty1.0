@@ -167,6 +167,7 @@ func (t *mcpTool) Name() string            { return t.name }
 func (t *mcpTool) Description() string     { return t.desc }
 func (t *mcpTool) Schema() json.RawMessage { return t.schema }
 func (t *mcpTool) ReadOnly() bool          { return false }
+func (t *mcpTool) Owner() tool.Owner       { return tool.Owner{Kind: "mcp", ID: t.client.spec.Name} }
 
 func (t *mcpTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	params := map[string]any{

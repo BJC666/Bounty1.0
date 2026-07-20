@@ -9,12 +9,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"bounty/internal/tool"
 )
 
 type CodeIndexTool struct{}
 
 func (CodeIndexTool) Name() string   { return "code_index" }
 func (CodeIndexTool) ReadOnly() bool { return true }
+func (CodeIndexTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (CodeIndexTool) Description() string {
 	return "Index code symbols (functions, types, methods) in a file or directory. Supports Go, Python, TypeScript, Rust."
 }

@@ -203,6 +203,7 @@ func doctorCmd() {
 	}
 	fmt.Printf("   Max steps: %d\n", cfg.Agent.MaxSteps)
 	fmt.Printf("   Compact ratio: %.1f\n", cfg.Agent.CompactRatio)
+	fmt.Printf("   Builtin tools: 14 (core)\n")
 }
 
 func dashboardCmd() {

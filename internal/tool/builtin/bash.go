@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os/exec"
 	"time"
+
+	"bounty/internal/tool"
 )
 
 type BashTool struct {
@@ -15,6 +17,7 @@ type BashTool struct {
 
 func (b *BashTool) Name() string   { return "bash" }
 func (b *BashTool) ReadOnly() bool { return false }
+func (b *BashTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (b *BashTool) Description() string {
 	return "Execute a shell command. Use for running tests, building, file operations, git commands, and other terminal tasks."
 }

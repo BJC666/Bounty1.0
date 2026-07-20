@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+
+	"bounty/internal/tool"
 )
 
 type GrepTool struct{}
 
 func (GrepTool) Name() string   { return "grep" }
 func (GrepTool) ReadOnly() bool { return true }
+func (GrepTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (GrepTool) Description() string {
 	return "Search file contents with regex. Prefers ripgrep (rg) when available."
 }
