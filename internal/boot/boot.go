@@ -27,6 +27,7 @@ import (
 	"bounty/internal/provider/ollama"
 	"bounty/internal/provider/openai"
 	"bounty/internal/provider/openai_native"
+	"bounty/internal/sandbox"
 	"bounty/internal/secrets"
 	"bounty/internal/skill"
 	"bounty/internal/store"
@@ -102,7 +103,19 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 
 	// 5. Create tool registry + register builtins
 	reg := tool.NewRegistry()
-	builtin.RegisterAll(reg, builtin.ToolOptions{BashTimeout: 120e9, ProjectRoot: cfg.Sandbox.WorkspaceRoot})
+
+	// 5a. If Docker is available, set up container sandbox for bash tool.
+	var dockerRunner func(ctx context.Context, command string) (string, error)
+	if sandbox.Available() {
+		ds := sandbox.NewDockerSandbox("alpine:3.21")
+		dockerRunner = ds.Run
+	}
+
+	builtin.RegisterAll(reg, builtin.ToolOptions{
+		BashTimeout:     120e9,
+		ProjectRoot:     cfg.Sandbox.WorkspaceRoot,
+		DockerBashRunner: dockerRunner,
+	})
 
 	// 5b. Connect MCP plugins
 	mcpHost := mcp.NewHost()

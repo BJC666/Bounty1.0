@@ -8,8 +8,9 @@ import (
 )
 
 type BashTool struct {
-	Timeout time.Duration
-	Sandbox func(*exec.Cmd) *exec.Cmd
+	Timeout      time.Duration
+	Sandbox      func(*exec.Cmd) *exec.Cmd
+	DockerRunner func(ctx context.Context, command string) (string, error)
 }
 
 func (b *BashTool) Name() string   { return "bash" }
@@ -38,6 +39,16 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 	}
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	// If Docker runner is configured, use it for isolated execution.
+	if b.DockerRunner != nil {
+		output, err := b.DockerRunner(execCtx, params.Command)
+		if err != nil {
+			return output, &ExecError{Command: params.Command, Output: output, Err: err}
+		}
+		return output, nil
+	}
+
 	cmd := exec.CommandContext(execCtx, "sh", "-c", params.Command)
 	if b.Sandbox != nil {
 		cmd = b.Sandbox(cmd)
