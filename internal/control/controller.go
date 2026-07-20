@@ -9,6 +9,7 @@ import (
 	"bounty/internal/event"
 	"bounty/internal/hook"
 	"bounty/internal/permission"
+	"bounty/internal/plugin"
 	"bounty/internal/provider"
 	"bounty/internal/skill"
 	"bounty/internal/store"
@@ -19,25 +20,28 @@ import (
 // plan mode, goals, and pending memory updates before dispatching to the agent
 // runner.
 type Controller struct {
-	runner    agent.Runner
-	sink      event.Sink
-	store     *store.Store
-	sessionID string
-	planMode  bool
-	hooks     *hook.Runner
-	gate      *permission.Gate
-	skills    *skill.Store
-	mu        sync.Mutex
-	pending   []string
-	goalText  string
+	runner       agent.Runner
+	sink         event.Sink
+	store        *store.Store
+	sessionID    string
+	planMode     bool
+	hooks        *hook.Runner
+	gate         *permission.Gate
+	skills       *skill.Store
+	commands     *plugin.CommandStore
+	agentDefs    *plugin.AgentStore
+	mu           sync.Mutex
+	pending      []string
+	goalText     string
 }
 
 // New creates a Controller wired to the given runner, sink, store, hooks, gate,
-// skills, and session identifier.
-func New(runner agent.Runner, sink event.Sink, st *store.Store, hooks *hook.Runner, gate *permission.Gate, skills *skill.Store, sessionID string) *Controller {
+// skills, commands, agents, and session identifier.
+func New(runner agent.Runner, sink event.Sink, st *store.Store, hooks *hook.Runner, gate *permission.Gate, skills *skill.Store, commands *plugin.CommandStore, agents *plugin.AgentStore, sessionID string) *Controller {
 	return &Controller{
 		runner: runner, sink: sink, store: st, sessionID: sessionID,
 		hooks: hooks, gate: gate, skills: skills,
+		commands: commands, agentDefs: agents,
 	}
 }
 

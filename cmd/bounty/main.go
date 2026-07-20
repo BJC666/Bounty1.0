@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"bounty/internal/boot"
+	"bounty/internal/channel"
 	"bounty/internal/cli"
 	"bounty/internal/config"
 	"bounty/internal/event"
@@ -16,7 +17,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: bounty chat|run|doctor\n")
+		fmt.Fprintf(os.Stderr, "Usage: bounty chat|run|serve|doctor\n")
 		os.Exit(1)
 	}
 	switch os.Args[1] {
@@ -24,6 +25,8 @@ func main() {
 		chatCmd()
 	case "run":
 		runCmd()
+	case "serve":
+		serveCmd()
 	case "doctor":
 		doctorCmd()
 	default:
@@ -123,6 +126,33 @@ func runCmd() {
 	if err := ctrl.Send(ctx, prompt); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+func serveCmd() {
+	wd, _ := os.Getwd()
+	cfg, err := repair.SafeLoad(wd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	ctrl, err := boot.Build(cfg, boot.Options{
+		MaxSteps:  cfg.Agent.MaxSteps,
+		Sink:      &consoleSink{},
+		Posture:   permission.PostureAuto,
+		SessionID: fmt.Sprintf("serve-%d", time.Now().UnixNano()),
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	chanReg := boot.NewChannelRegistry(ctrl)
+	ctx := context.Background()
+	gw := channel.NewGateway(ctrl, chanReg, 8080)
+	if err := gw.Start(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Gateway error: %v\n", err)
 	}
 }
 

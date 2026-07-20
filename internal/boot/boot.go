@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"bounty/internal/agent"
+	"bounty/internal/channel"
+	"bounty/internal/channel/webhook"
 	"bounty/internal/config"
 	"bounty/internal/control"
 	"bounty/internal/environment"
@@ -17,6 +19,7 @@ import (
 	"bounty/internal/mcp"
 	"bounty/internal/memory"
 	"bounty/internal/permission"
+	"bounty/internal/plugin"
 	"bounty/internal/provider"
 	"bounty/internal/provider/anthropic"
 	"bounty/internal/provider/openai"
@@ -109,8 +112,22 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	skillStore := skill.NewStore()
 	skillStore.Discover(cfg.Skills.Paths)
 
+	// 7b. Load commands
+	cmdStore := plugin.NewCommandStore()
+	cmdStore.Discover([]string{
+		filepath.Join(cfg.Sandbox.WorkspaceRoot, ".bounty", "commands"),
+		filepath.Join(dataDir(), "commands"),
+	})
+
+	// 7c. Load agent definitions
+	agentStore := plugin.NewAgentStore()
+	agentStore.Discover([]string{
+		filepath.Join(cfg.Sandbox.WorkspaceRoot, ".bounty", "agents"),
+		filepath.Join(dataDir(), "agents"),
+	})
+
 	// 8. Build system prompt
-	systemPrompt := buildSystemPrompt(cfg, memDocs, skillStore.Index())
+	systemPrompt := buildSystemPrompt(cfg, memDocs, skillStore.Index(), cmdStore)
 
 	// 9. Create Session
 	session := agent.NewSession(systemPrompt)
@@ -182,8 +199,30 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	}
 
 	// 15. Create Controller
-	ctrl := control.New(ag, opts.Sink, st, hookRunner, permGate, skillStore, opts.SessionID)
+	ctrl := control.New(ag, opts.Sink, st, hookRunner, permGate, skillStore, cmdStore, agentStore, opts.SessionID)
 	return ctrl, nil
+}
+
+// ---------------------------------------------------------------------------
+// Channel support
+// ---------------------------------------------------------------------------
+
+// channelHandler bridges incoming channel messages to the controller.
+type channelHandler struct {
+	ctrl *control.Controller
+}
+
+func (h *channelHandler) HandleMessage(ctx context.Context, msg channel.Message) error {
+	return h.ctrl.Send(ctx, msg.Text)
+}
+
+// NewChannelRegistry creates a channel registry wired to the given controller,
+// and registers the default webhook channel.
+func NewChannelRegistry(ctrl *control.Controller) *channel.Registry {
+	reg := channel.NewRegistry(&channelHandler{ctrl: ctrl})
+	wh := webhook.New("webhook", "Webhook Receiver", reg.Handler())
+	reg.Register(wh)
+	return reg
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +289,7 @@ func dataDir() string {
 
 // buildSystemPrompt constructs the system prompt by combining the base
 // persona, workspace root, project memory documents, and available skills.
-func buildSystemPrompt(cfg *config.Config, docs []memory.Doc, skills []skill.IndexEntry) string {
+func buildSystemPrompt(cfg *config.Config, docs []memory.Doc, skills []skill.IndexEntry, cmdStore *plugin.CommandStore) string {
 	var sb strings.Builder
 	sb.WriteString("You are Bounty, a general-purpose AI agent. You help users with software engineering, research, data analysis, and automation tasks.\n\n")
 
@@ -273,6 +312,8 @@ func buildSystemPrompt(cfg *config.Config, docs []memory.Doc, skills []skill.Ind
 		}
 		sb.WriteString(fmt.Sprintf("- %s: %s%s\n", sk.Name, sk.Description, tag))
 	}
+	sb.WriteString("\n")
+	sb.WriteString(cmdStore.IndexBlock())
 	return sb.String()
 }
 
