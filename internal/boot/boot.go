@@ -16,6 +16,7 @@ import (
 	"bounty/internal/memory"
 	"bounty/internal/permission"
 	"bounty/internal/provider"
+	"bounty/internal/provider/anthropic"
 	"bounty/internal/provider/openai"
 	"bounty/internal/secrets"
 	"bounty/internal/skill"
@@ -69,6 +70,8 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	switch provCfg.Kind {
 	case "openai":
 		prov = openai.New(provCfg.BaseURL, apiKey, modelName, provCfg.ContextWindow)
+	case "anthropic":
+		prov = anthropic.New(provCfg.BaseURL, apiKey, modelName, provCfg.ContextWindow)
 	default:
 		return nil, fmt.Errorf("unknown provider kind: %s", provCfg.Kind)
 	}
