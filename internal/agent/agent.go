@@ -65,7 +65,8 @@ type Options struct {
 	Checkpointer Checkpointer
 	MaxToolOut   int
 	Insights     *SessionInsights
-	Reviewer     *BackgroundReviewer
+	Reviewer      *BackgroundReviewer
+	LearningGraph *LearningGraph
 }
 
 // Agent is the core turn-taking loop: stream LLM output, collect tool calls,
@@ -99,6 +100,7 @@ type Agent struct {
 	// Self-improvement
 	insights   *SessionInsights
 	reviewer   *BackgroundReviewer
+	learnGraph *LearningGraph
 	skillTurns int // turns since last skill use
 }
 
@@ -128,6 +130,7 @@ func New(prov provider.Provider, tools *tool.Registry, session *Session, opts Op
 		stormSig:     make(map[string]int),
 		insights:     opts.Insights,
 		reviewer:     opts.Reviewer,
+		learnGraph:   opts.LearningGraph,
 	}
 }
 
@@ -251,6 +254,13 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 			}
 			a.insights.RecordTurn(tokensIn, tokensOut, toolNames, "")
 			a.skillTurns++
+		}
+
+		// Update learning graph
+		if a.learnGraph != nil {
+			for _, tc := range toolCalls {
+				a.learnGraph.Touch("tool:"+tc.Name, "tool", tc.Name)
+			}
 		}
 
 		// Background review check (non-blocking).

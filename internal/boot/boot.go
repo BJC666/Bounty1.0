@@ -10,6 +10,8 @@ import (
 
 	"bounty/internal/agent"
 	"bounty/internal/channel"
+	"bounty/internal/channel/httpapi"
+	"bounty/internal/channel/terminal"
 	"bounty/internal/channel/webhook"
 	"bounty/internal/config"
 	"bounty/internal/control"
@@ -121,6 +123,9 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		fmt.Fprintf(os.Stderr, "Curator: %s\n", report.String())
 	}
 
+	// 7a-2. Learning graph — tracks relationships between skills, tools, and memory
+	learningGraph := agent.NewLearningGraph(dataDir())
+
 	// 7b. Load commands
 	cmdStore := plugin.NewCommandStore()
 	cmdStore.Discover([]string{
@@ -155,8 +160,9 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		MaxSteps:    opts.MaxSteps,
 		Temperature: cfg.Agent.Temperature,
 		Sink:        opts.Sink,
-		Gate:        gateAdapter{gate: permGate},
-		Hooks:       hookAdapter{runner: hookRunner},
+		Gate:          gateAdapter{gate: permGate},
+		Hooks:         hookAdapter{runner: hookRunner},
+		LearningGraph: learningGraph,
 	})
 
 	// 12b. Register subagent tools onto the same registry
@@ -229,8 +235,9 @@ func (h *channelHandler) HandleMessage(ctx context.Context, msg channel.Message)
 // and registers the default webhook channel.
 func NewChannelRegistry(ctrl *control.Controller) *channel.Registry {
 	reg := channel.NewRegistry(&channelHandler{ctrl: ctrl})
-	wh := webhook.New("webhook", "Webhook Receiver", reg.Handler())
-	reg.Register(wh)
+	reg.Register(webhook.New("webhook", "Webhook Receiver", reg.Handler()))
+	reg.Register(terminal.New("terminal", reg.Handler()))
+	reg.Register(httpapi.New("httpapi", reg.Handler(), 9090))
 	return reg
 }
 
