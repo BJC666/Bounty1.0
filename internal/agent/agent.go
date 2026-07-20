@@ -88,6 +88,11 @@ type Agent struct {
 
 	// Last usage snapshot (atomic for safe reads from outside the loop).
 	lastUsage atomic.Pointer[provider.Usage]
+
+	// Prompt cache diagnostics.
+	lastPrefixShape     provider.PrefixShape
+	haveLastPrefixShape bool
+	cacheStats          provider.CacheStats
 }
 
 // New creates an Agent. It applies defaults for zero-valued Options.

@@ -13,6 +13,7 @@ import (
 	"bounty/internal/control"
 	"bounty/internal/event"
 	"bounty/internal/hook"
+	"bounty/internal/mcp"
 	"bounty/internal/memory"
 	"bounty/internal/permission"
 	"bounty/internal/provider"
@@ -79,6 +80,22 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	// 5. Create tool registry + register builtins
 	reg := tool.NewRegistry()
 	builtin.RegisterAll(reg, builtin.ToolOptions{BashTimeout: 120e9})
+
+	// 5b. Connect MCP plugins
+	mcpHost := mcp.NewHost()
+	for _, p := range cfg.Plugins {
+		spec := mcp.Spec{
+			Name:    p.Name,
+			Command: p.Command,
+			Args:    p.Args,
+			Env:     p.Env,
+		}
+		if err := mcpHost.Connect(spec); err != nil {
+			// Log warning but continue — MCP servers are optional
+			fmt.Fprintf(os.Stderr, "Warning: MCP server %q: %v\n", p.Name, err)
+		}
+	}
+	mcpHost.RegisterTools(reg)
 
 	// 6. Load memory
 	memDocs, _ := memory.Load(cfg.Sandbox.WorkspaceRoot)
