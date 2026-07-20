@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -14,12 +16,13 @@ import (
 	"bounty/internal/permission"
 	"bounty/internal/remote"
 	"bounty/internal/repair"
+	"bounty/internal/serve"
 	"strings"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: bounty chat|run|serve|doctor|remote\n")
+		fmt.Fprintf(os.Stderr, "Usage: bounty chat|run|serve|dashboard|doctor|remote\n")
 		os.Exit(1)
 	}
 	switch os.Args[1] {
@@ -31,6 +34,8 @@ func main() {
 		serveCmd()
 	case "doctor":
 		doctorCmd()
+	case "dashboard":
+		dashboardCmd()
 	case "remote":
 		remoteCmd()
 	default:
@@ -198,6 +203,55 @@ func doctorCmd() {
 	}
 	fmt.Printf("   Max steps: %d\n", cfg.Agent.MaxSteps)
 	fmt.Printf("   Compact ratio: %.1f\n", cfg.Agent.CompactRatio)
+}
+
+func dashboardCmd() {
+	wd, _ := os.Getwd()
+	cfg, err := repair.SafeLoad(wd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	ctrl, err := boot.Build(cfg, boot.Options{
+		MaxSteps:  cfg.Agent.MaxSteps,
+		Sink:      &consoleSink{},
+		Posture:   permission.PostureAuto,
+		SessionID: fmt.Sprintf("dashboard-%d", time.Now().UnixNano()),
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	dashboard := &serve.DashboardHandler{
+		SessionList: func() []serve.SessionInfo {
+			sessions, _ := ctrl.ListSessions(20)
+			var result []serve.SessionInfo
+			for _, s := range sessions {
+				result = append(result, serve.SessionInfo{
+					ID:        s.ID,
+					Title:     s.Title,
+					Model:     s.Model,
+					UpdatedAt: s.UpdatedAt,
+				})
+			}
+			return result
+		},
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/dashboard", dashboard)
+	mux.Handle("/dashboard/", dashboard)
+	mux.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Message string `json:"message"` }
+		json.NewDecoder(r.Body).Decode(&req)
+		ctrl.Send(r.Context(), req.Message)
+		w.WriteHeader(202)
+	})
+
+	fmt.Println("Dashboard: http://localhost:8080/dashboard")
+	http.ListenAndServe(":8080", mux)
 }
 
 func remoteCmd() {
