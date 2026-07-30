@@ -3,6 +3,7 @@ package hook
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -17,6 +18,7 @@ func runShellHook(ctx context.Context, cfg HookConfig, payload Payload) (*Result
 
 	payloadJSON, _ := json.Marshal(payload)
 	cmd := exec.CommandContext(execCtx, "sh", "-c", cfg.Command)
+	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "HOOK_PAYLOAD="+string(payloadJSON))
 
 	output, err := cmd.CombinedOutput()

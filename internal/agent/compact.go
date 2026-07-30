@@ -70,7 +70,7 @@ func (a *Agent) compactWithConfig(sess *Session, cfg CompactConfig) {
 		newMsgs = append(newMsgs, msgs[0]) // system
 		newMsgs = append(newMsgs, provider.Message{
 			Role:    "user",
-			Content: "[Context compressed - earlier conversation summarized.]",
+			Content: "[Earlier conversation was dropped due to context length limits. Key information from earlier turns may be lost.]",
 		})
 		newMsgs = append(newMsgs, tail...)
 		sess.ReplaceMessages(newMsgs)

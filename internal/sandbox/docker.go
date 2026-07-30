@@ -11,19 +11,22 @@ import (
 type DockerSandbox struct {
 	Image      string
 	WorkDir    string
+	HostDir    string // host workspace to mount
 	NetworkOff bool
 	ReadOnly   bool
 }
 
-// NewDockerSandbox creates a Docker sandbox with the given image.
+// NewDockerSandbox creates a Docker sandbox with the given image and host
+// workspace directory to mount inside the container.
 // If image is empty, "alpine:3.21" is used as default.
-func NewDockerSandbox(image string) *DockerSandbox {
+func NewDockerSandbox(image, hostDir string) *DockerSandbox {
 	if image == "" {
 		image = "alpine:3.21"
 	}
 	return &DockerSandbox{
 		Image:      image,
 		WorkDir:    "/workspace",
+		HostDir:    hostDir,
 		NetworkOff: false,
 		ReadOnly:   false,
 	}
@@ -40,9 +43,13 @@ func (d *DockerSandbox) Run(ctx context.Context, command string) (string, error)
 		args = append(args, "--read-only", "--tmpfs=/tmp")
 	}
 
+	if d.HostDir != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:%s", d.HostDir, d.WorkDir))
+	} else {
+		args = append(args, "-v", fmt.Sprintf("%s:%s", d.WorkDir, d.WorkDir))
+	}
 	args = append(args,
 		"-w", d.WorkDir,
-		"-v", fmt.Sprintf("%s:%s", d.WorkDir, d.WorkDir),
 		d.Image,
 		"sh", "-c", command,
 	)
@@ -77,6 +84,10 @@ func Available() bool {
 func (d *DockerSandbox) WrapInDocker(orig string) string {
 	// Escape single quotes in the original command for safe sh -c usage.
 	escaped := strings.ReplaceAll(orig, "'", "'\\''")
+	hostVol := d.WorkDir
+	if d.HostDir != "" {
+		hostVol = d.HostDir
+	}
 	return fmt.Sprintf("docker run --rm -w %s -v %s:%s %s sh -c '%s'",
-		d.WorkDir, d.WorkDir, d.WorkDir, d.Image, escaped)
+		d.WorkDir, hostVol, d.WorkDir, d.Image, escaped)
 }

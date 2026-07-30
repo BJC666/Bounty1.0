@@ -15,6 +15,11 @@ temperature = 0.0
 compact_ratio = 0.8
 max_steps = 50
 
+# ── DeVET Integration ──
+[devet]
+enabled = true
+base_url = "http://127.0.0.1:8765/api"
+
 [remote]
 enabled = false
 # host = "myserver.example.com"

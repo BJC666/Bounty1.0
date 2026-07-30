@@ -240,6 +240,9 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 		}
 
 		a.checkGuardrails(toolCalls, results)
+		if a.blockedTurnStreak >= 3 {
+			return fmt.Errorf("agent stuck: %d consecutive turns with no progress", a.blockedTurnStreak)
+		}
 
 		// Record turn insights.
 		if a.insights != nil {

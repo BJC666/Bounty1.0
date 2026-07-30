@@ -115,7 +115,7 @@ func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tool
 	reqBody := chatRequest{
 		Model:       p.Model,
 		Messages:    chatMsgs,
-		Tools:       tools,
+		Tools:       wrapTools(tools),
 		Stream:      true,
 		Temperature: opts.Temperature,
 		MaxTokens:   opts.MaxTokens,
@@ -227,4 +227,40 @@ func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<-
 			return
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		ch <- provider.StreamEvent{Err: fmt.Errorf("stream read error: %w", err)}
+	}
+}
+
+// wrapTools wraps raw tool schemas in OpenAI function format.
+// Each schema should have "name" and "description" at top level;
+// parameters are the rest of the schema.
+func wrapTools(tools []json.RawMessage) []json.RawMessage {
+	wrapped := make([]json.RawMessage, len(tools))
+	for i, raw := range tools {
+		var schema map[string]interface{}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			wrapped[i] = raw
+			continue
+		}
+		name, _ := schema["name"].(string)
+		desc, _ := schema["description"].(string)
+		// Remove name/desc from schema, keep as parameters
+		delete(schema, "name")
+		delete(schema, "description")
+		if name == "" {
+			name = fmt.Sprintf("tool_%d", i)
+		}
+		fn := map[string]interface{}{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        name,
+				"description": desc,
+				"parameters":  schema,
+			},
+		}
+		b, _ := json.Marshal(fn)
+		wrapped[i] = b
+	}
+	return wrapped
 }

@@ -25,11 +25,7 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_session
     ON messages(session_id, id);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-    content,
-    content_rowid=id,
-    content='messages'
-);
+-- FTS5 is created separately (optional, may fail on builds without FTS5 module)
 
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER NOT NULL

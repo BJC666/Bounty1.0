@@ -25,11 +25,11 @@ type Event struct {
 	ToolErr    string
 
 	// Usage
-	Usage *Usage
+	Usage *Usage `json:"Usage,omitempty"`
 
 	// Turn lifecycle
-	TurnComplete bool
-	TurnErr      error
+	TurnComplete bool   `json:"TurnComplete,omitempty"`
+	TurnErr      string `json:"TurnErr,omitempty"`
 }
 
 type Usage struct {

@@ -107,7 +107,7 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	// 5a. If Docker is available, set up container sandbox for bash tool.
 	var dockerRunner func(ctx context.Context, command string) (string, error)
 	if sandbox.Available() {
-		ds := sandbox.NewDockerSandbox("alpine:3.21")
+		ds := sandbox.NewDockerSandbox("alpine:3.21", cfg.Sandbox.WorkspaceRoot)
 		dockerRunner = ds.Run
 	}
 
@@ -333,7 +333,7 @@ func dataDir() string {
 // persona, workspace root, project memory documents, and available skills.
 func buildSystemPrompt(cfg *config.Config, docs []memory.Doc, skills []skill.IndexEntry, cmdStore *plugin.CommandStore) string {
 	var sb strings.Builder
-	sb.WriteString("You are Bounty, a general-purpose AI agent. You help users with software engineering, research, data analysis, and automation tasks.\n\n")
+	sb.WriteString(fmt.Sprintf("You are Bounty, a general-purpose AI agent running on **%s**. You help users with software engineering, research, data analysis, and automation tasks. If asked which model or provider you are using, answer with: %s\n\n", cfg.DefaultModel, cfg.DefaultModel))
 
 	// Environment info (cached — stable across turns)
 	sb.WriteString(environment.Probe().Block())

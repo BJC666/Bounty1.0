@@ -11,6 +11,10 @@ func (a *Agent) checkGuardrails(toolCalls []provider.ToolCall, results []toolRes
 			a.stormSig[key]++
 		}
 	}
+	// Cap stormSig size
+	if len(a.stormSig) > 100 {
+		a.stormSig = make(map[string]int)
+	}
 	allFailed := true
 	for _, tr := range results {
 		if tr.Err == nil {

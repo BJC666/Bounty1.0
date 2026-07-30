@@ -318,6 +318,9 @@ func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<-
 			return
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		ch <- provider.StreamEvent{Err: fmt.Errorf("stream read error: %w", err)}
+	}
 }
 
 // Helpers for tool schema conversion

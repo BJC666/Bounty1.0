@@ -36,7 +36,8 @@ type Session struct {
 }
 
 type Store struct {
-	db *sql.DB
+	db          *sql.DB
+	hasFTS5     bool
 }
 
 func New(path string) (*Store, error) {
@@ -52,7 +53,11 @@ func New(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	s := &Store{db: db}
+	// FTS5 is optional — try to create, but continue if unavailable
+	_, err = db.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(content, content_rowid=id, content='messages')`)
+	s.hasFTS5 = (err == nil)
+	return s, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -81,6 +86,11 @@ func (s *Store) SaveMessages(sessionID string, msgs []Message) error {
 	}
 	defer tx.Rollback()
 
+	// Delete old messages for this session first
+	if _, err := tx.Exec(`DELETE FROM messages WHERE session_id = ?`, sessionID); err != nil {
+		return err
+	}
+
 	stmt, err := tx.Prepare(`
 		INSERT INTO messages (session_id, role, content, tool_calls, tool_name, usage, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -105,8 +115,9 @@ func (s *Store) SaveMessages(sessionID string, msgs []Message) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	// Rebuild FTS index so newly inserted messages are searchable.
-	s.db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`)
+	if s.hasFTS5 {
+		s.db.Exec(`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`)
+	}
 	return nil
 }
 
@@ -133,23 +144,30 @@ func (s *Store) LoadMessages(sessionID string) ([]Message, error) {
 }
 
 func (s *Store) SearchMessages(query string, limit int) ([]Message, error) {
+	if !s.hasFTS5 {
+		// Fallback: LIKE search
+		rows, err := s.db.Query(`SELECT id, session_id, role, content, COALESCE(tool_calls,''), COALESCE(tool_name,''), COALESCE(usage,''), created_at FROM messages WHERE content LIKE ? ORDER BY id DESC LIMIT ?`, "%"+query+"%", limit)
+		if err != nil { return nil, err }
+		defer rows.Close()
+		var msgs []Message
+		for rows.Next() {
+			var m Message
+			if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &m.ToolCalls, &m.ToolName, &m.Usage, &m.CreatedAt); err != nil { return nil, err }
+			msgs = append(msgs, m)
+		}
+		return msgs, rows.Err()
+	}
 	rows, err := s.db.Query(`
 		SELECT m.id, m.session_id, m.role, m.content, COALESCE(m.tool_calls,''), COALESCE(m.tool_name,''), COALESCE(m.usage,''), m.created_at
 		FROM messages_fts f JOIN messages m ON f.rowid = m.id
 		WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?
 	`, query, limit)
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil, err }
 	defer rows.Close()
-
 	var msgs []Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content,
-			&m.ToolCalls, &m.ToolName, &m.Usage, &m.CreatedAt); err != nil {
-			return nil, err
-		}
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &m.ToolCalls, &m.ToolName, &m.Usage, &m.CreatedAt); err != nil { return nil, err }
 		msgs = append(msgs, m)
 	}
 	return msgs, rows.Err()

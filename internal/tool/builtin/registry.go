@@ -29,4 +29,11 @@ func RegisterAll(reg *tool.Registry, opts ToolOptions) {
 	reg.Add(&CodeIndexTool{})
 	reg.Add(&RememberTool{ProjectRoot: opts.ProjectRoot})
 	reg.Add(&BrowserTool{})
+
+	// DeVET integration tools (call DeVET REST API at localhost:8765)
+	reg.Add(&DeVETHealthTool{})
+	reg.Add(&DeVETBuildScenarioTool{})
+	reg.Add(&DeVETVerifyChainTool{})
+	reg.Add(&DeVETListAttacksTool{})
+	reg.Add(&DeVETSimulateAttackTool{})
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"bounty/internal/boot"
@@ -203,7 +204,7 @@ func doctorCmd() {
 	}
 	fmt.Printf("   Max steps: %d\n", cfg.Agent.MaxSteps)
 	fmt.Printf("   Compact ratio: %.1f\n", cfg.Agent.CompactRatio)
-	fmt.Printf("   Builtin tools: 14 (core)\n")
+	fmt.Printf("   Builtin tools: 19 (14 core + 5 DeVET integration)\n")
 }
 
 func dashboardCmd() {
@@ -214,15 +215,22 @@ func dashboardCmd() {
 		os.Exit(1)
 	}
 
+	// Broadcast sink for SSE clients
+	broadcast := newBroadcastSink()
+
 	ctrl, err := boot.Build(cfg, boot.Options{
 		MaxSteps:  cfg.Agent.MaxSteps,
-		Sink:      &consoleSink{},
+		Sink:      broadcast,
 		Posture:   permission.PostureAuto,
-		SessionID: fmt.Sprintf("dashboard-%d", time.Now().UnixNano()),
+		SessionID: fmt.Sprintf("web-%d", time.Now().UnixNano()),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	chatHandler := &serve.ChatHandler{
+		SendFn: func(text string) error { return ctrl.Send(context.Background(), text) },
 	}
 
 	dashboard := &serve.DashboardHandler{
@@ -230,29 +238,20 @@ func dashboardCmd() {
 			sessions, _ := ctrl.ListSessions(20)
 			var result []serve.SessionInfo
 			for _, s := range sessions {
-				result = append(result, serve.SessionInfo{
-					ID:        s.ID,
-					Title:     s.Title,
-					Model:     s.Model,
-					UpdatedAt: s.UpdatedAt,
-				})
+				result = append(result, serve.SessionInfo{ID: s.ID, Title: s.Title, Model: s.Model, UpdatedAt: s.UpdatedAt})
 			}
 			return result
 		},
 	}
 
 	mux := http.NewServeMux()
+	mux.Handle("/", chatHandler)
 	mux.Handle("/dashboard", dashboard)
 	mux.Handle("/dashboard/", dashboard)
-	mux.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
-		var req struct{ Message string `json:"message"` }
-		json.NewDecoder(r.Body).Decode(&req)
-		ctrl.Send(r.Context(), req.Message)
-		w.WriteHeader(202)
-	})
+	mux.HandleFunc("/events", broadcast.serveSSE)
 
-	fmt.Println("Dashboard: http://localhost:8080/dashboard")
-	http.ListenAndServe(":8080", mux)
+	fmt.Println("Dashboard: http://localhost:8090/dashboard")
+	http.ListenAndServe(":8090", mux)
 }
 
 func remoteCmd() {
@@ -270,6 +269,38 @@ func remoteCmd() {
 }
 
 // consoleSink prints events to the terminal.
+// broadcastSink fans out events to all connected SSE clients.
+type broadcastSink struct {
+	clients map[chan string]bool
+	mu      sync.Mutex
+}
+func newBroadcastSink() *broadcastSink { return &broadcastSink{clients: make(map[chan string]bool)} }
+func (b *broadcastSink) Emit(ev event.Event) {
+	data, _ := json.Marshal(ev)
+	b.mu.Lock(); defer b.mu.Unlock()
+	for ch := range b.clients {
+		select { case ch <- string(data): default: }
+	}
+}
+func (b *broadcastSink) serveSSE(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	flusher, ok := w.(http.Flusher)
+	if !ok { http.Error(w, "streaming not supported", 500); return }
+	ch := make(chan string, 64)
+	b.mu.Lock(); b.clients[ch] = true; b.mu.Unlock()
+	defer func() { b.mu.Lock(); delete(b.clients, ch); close(ch); b.mu.Unlock() }()
+	for {
+		select {
+		case <-r.Context().Done(): return
+		case data := <-ch:
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		}
+	}
+}
+
 type consoleSink struct{}
 
 func (s *consoleSink) Emit(ev event.Event) {
