@@ -36,7 +36,12 @@ func (WebFetchTool) Execute(ctx context.Context, args json.RawMessage) (string, 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
 	out := string(body)
 	if len(out) > 32000 {
-		out = out[:32000] + "\n... [truncated]"
+		runes := []rune(out)
+		if len(runes) > 32000/4 {
+			out = string(runes[:32000/4]) + "\n... [truncated]"
+		} else {
+			out = out[:32000] + "\n... [truncated]"
+		}
 	}
 	return out, nil
 }

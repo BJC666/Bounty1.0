@@ -2,21 +2,24 @@ package builtin
 
 import (
 	"context"
+	"os/exec"
 	"time"
 
 	"bounty/internal/tool"
 )
 
 type ToolOptions struct {
-	BashTimeout     time.Duration
-	ProjectRoot     string
+	BashTimeout      time.Duration
+	ProjectRoot      string
 	DockerBashRunner func(ctx context.Context, command string) (string, error)
+	SandboxFunc      func(*exec.Cmd) *exec.Cmd
 }
 
 func RegisterAll(reg *tool.Registry, opts ToolOptions) {
 	reg.Add(&BashTool{
 		Timeout:      opts.BashTimeout,
 		DockerRunner: opts.DockerBashRunner,
+		Sandbox:      opts.SandboxFunc,
 	})
 	reg.Add(&ReadFileTool{})
 	reg.Add(&WriteFileTool{})

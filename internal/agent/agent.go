@@ -357,7 +357,12 @@ func (a *Agent) executeOne(ctx context.Context, tc provider.ToolCall) toolResult
 	result, err := t.Execute(ctx, tc.Args)
 
 	if len(result) > a.maxToolOut {
-		result = result[:a.maxToolOut] + "\n... [truncated]"
+		runes := []rune(result)
+		if len(runes) > a.maxToolOut/4 {
+			result = string(runes[:a.maxToolOut/4]) + "\n... [truncated]"
+		} else {
+			result = result[:a.maxToolOut] + "\n... [truncated]"
+		}
 	}
 
 	if a.hooks != nil {
@@ -376,6 +381,9 @@ func (a *Agent) mergeToolCallDelta(toolCalls *[]provider.ToolCall, delta provide
 	for i := range *toolCalls {
 		if (*toolCalls)[i].ID == delta.ID {
 			(*toolCalls)[i].Args = append((*toolCalls)[i].Args, []byte(delta.ArgsDelta)...)
+			if delta.Name != "" {
+				(*toolCalls)[i].Name = delta.Name
+			}
 			return
 		}
 	}

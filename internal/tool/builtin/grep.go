@@ -47,7 +47,12 @@ func (GrepTool) Execute(ctx context.Context, args json.RawMessage) (string, erro
 	}
 	out := string(output)
 	if len(out) > 32000 {
-		out = out[:32000] + "\n... [truncated]"
+		runes := []rune(out)
+		if len(runes) > 32000/4 {
+			out = string(runes[:32000/4]) + "\n... [truncated]"
+		} else {
+			out = out[:32000] + "\n... [truncated]"
+		}
 	}
 	return out, nil
 }

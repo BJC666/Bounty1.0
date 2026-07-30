@@ -42,6 +42,20 @@ func (w *WebSearchTool) Execute(ctx context.Context, args json.RawMessage) (stri
 
 	// Try DuckDuckGo Instant Answer API first (free, no key)
 	results := w.searchDDG(ctx, params.Query)
+
+	// Filter by allowed/blocked domains
+	filtered := make([]searchResult, 0, len(results))
+	for _, r := range results {
+		if containsAny(r.URL, params.BlockedDomains) {
+			continue
+		}
+		if len(params.AllowedDomains) > 0 && !containsAny(r.URL, params.AllowedDomains) {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	results = filtered
+
 	if len(results) > 0 {
 		return formatResults(params.Query, results), nil
 	}
@@ -121,6 +135,15 @@ func (w *WebSearchTool) searchDDG(ctx context.Context, query string) []searchRes
 	}
 
 	return results
+}
+
+func containsAny(s string, substrs []string) bool {
+	for _, sub := range substrs {
+		if strings.Contains(strings.ToLower(s), strings.ToLower(sub)) {
+			return true
+		}
+	}
+	return false
 }
 
 func formatResults(query string, results []searchResult) string {

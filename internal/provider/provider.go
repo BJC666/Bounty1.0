@@ -20,10 +20,11 @@ type ToolCall struct {
 }
 
 type Delta struct {
-	Role      string
-	Content   string
-	Reasoning string
-	ToolCalls []ToolCallDelta
+	Role         string
+	Content      string
+	Reasoning    string
+	ToolCalls    []ToolCallDelta
+	FinishReason string
 }
 
 type ToolCallDelta struct {

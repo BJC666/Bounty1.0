@@ -9,7 +9,10 @@ import (
 )
 
 func classifyError(resp *http.Response) error {
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return &RetryableError{Category: "NetworkError", Message: fmt.Sprintf("failed to read error body: %v", err), MaxRetries: 3, BackoffFunc: exponentialBackoff}
+	}
 	bodyStr := string(bodyBytes)
 
 	switch {

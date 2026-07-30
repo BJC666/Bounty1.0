@@ -231,6 +231,10 @@ func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tool
 	}
 
 	ch := make(chan provider.StreamEvent, 10)
+	go func() {
+		<-ctx.Done()
+		resp.Body.Close()
+	}()
 	go p.readStream(ctx, resp.Body, ch)
 	return ch, nil
 }
@@ -312,6 +316,9 @@ func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<-
 					OutputTokens: ev.Usage.OutputTokens,
 				}}
 			}
+			if ev.Delta != nil && ev.Delta.StopReason != "" {
+				ch <- provider.StreamEvent{Delta: &provider.Delta{FinishReason: ev.Delta.StopReason}}
+			}
 
 		case "message_stop":
 			ch <- provider.StreamEvent{Done: true}
@@ -326,13 +333,19 @@ func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<-
 // Helpers for tool schema conversion
 
 func schemaName(schema map[string]interface{}) string {
+	if schema == nil {
+		return "unknown"
+	}
 	if s, ok := schema["name"].(string); ok {
 		return s
 	}
-	return ""
+	return "unknown"
 }
 
 func schemaDesc(schema map[string]interface{}) string {
+	if schema == nil {
+		return ""
+	}
 	if d, ok := schema["description"].(string); ok {
 		return d
 	}
@@ -340,6 +353,9 @@ func schemaDesc(schema map[string]interface{}) string {
 }
 
 func schemaInput(schema map[string]interface{}) interface{} {
+	if schema == nil {
+		return map[string]interface{}{}
+	}
 	if fn, ok := schema["function"]; ok {
 		if fnMap, ok := fn.(map[string]interface{}); ok {
 			if params, ok := fnMap["parameters"]; ok {

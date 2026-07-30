@@ -29,6 +29,9 @@ func (EditFileTool) Execute(ctx context.Context, args json.RawMessage) (string, 
 	if err := json.Unmarshal(args, &params); err != nil {
 		return "", err
 	}
+	if params.OldString == "" {
+		return "", fmt.Errorf("old_string must not be empty")
+	}
 	data, err := os.ReadFile(params.FilePath)
 	if err != nil {
 		return "", err

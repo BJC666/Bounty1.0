@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -112,9 +113,10 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	}
 
 	builtin.RegisterAll(reg, builtin.ToolOptions{
-		BashTimeout:     120e9,
-		ProjectRoot:     cfg.Sandbox.WorkspaceRoot,
+		BashTimeout:      120e9,
+		ProjectRoot:      cfg.Sandbox.WorkspaceRoot,
 		DockerBashRunner: dockerRunner,
+		SandboxFunc:      func(cmd *exec.Cmd) *exec.Cmd { return sandbox.Wrap(cmd, cfg.Sandbox.WorkspaceRoot) },
 	})
 
 	// 5b. Connect MCP plugins

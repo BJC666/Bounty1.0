@@ -79,6 +79,14 @@ func (r *Registry) Get(name string) (Tool, bool) {
 // Schemas returns JSON Schemas sorted by name — byte-stable (cache-friendly).
 // Each schema is injected with the tool's name and description.
 func (r *Registry) Schemas() []json.RawMessage {
+	r.mu.RLock()
+	if !r.dirty {
+		cached := r.cached
+		r.mu.RUnlock()
+		return cached
+	}
+	r.mu.RUnlock()
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.dirty {

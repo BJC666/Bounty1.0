@@ -143,6 +143,10 @@ func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tool
 	}
 
 	ch := make(chan provider.StreamEvent, 10)
+	go func() {
+		<-ctx.Done()
+		resp.Body.Close()
+	}()
 	go p.readStream(ctx, resp.Body, ch)
 	return ch, nil
 }

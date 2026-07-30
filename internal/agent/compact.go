@@ -21,15 +21,27 @@ type CompactConfig struct {
 	MaxContext int
 }
 
-// estimateTokens provides a rough token count (4 chars approx 1 token).
+// estimateTokens provides a rough token count (4 chars approx 1 token for ASCII,
+// ~1 char per token for CJK and other multibyte).
 func estimateTokens(msgs []provider.Message) int {
 	total := 0
 	for _, m := range msgs {
-		total += len(m.Content) / charsPerToken
-		total += len(m.ToolName) / charsPerToken
+		// Each message has ~4 tokens overhead (role markers)
+		total += 4
+		// Count characters: ~4 ASCII chars per token, ~1 CJK char per token
+		asciiCount := 0
+		for _, r := range m.Content {
+			if r <= 0x7F {
+				asciiCount++
+			} else {
+				total++ // CJK and other multibyte: ~1 char per token
+			}
+		}
+		total += asciiCount / 4
+		total += len(m.Content) / 4 // overall estimate
+		total += len(m.ToolName) / 4
 		for _, tc := range m.ToolCalls {
-			total += len(tc.Name) / charsPerToken
-			total += len(tc.Args) / charsPerToken
+			total += len(tc.Name)/4 + len(tc.Args)/4
 		}
 	}
 	if total == 0 {
@@ -100,17 +112,17 @@ func tailMessages(msgs []provider.Message, tokenBudget int, minMessages int) []p
 		return msgs[1:] // exclude system prompt
 	}
 
-	tail := make([]provider.Message, 0)
 	tokens := 0
-	for i := len(msgs) - 1; i >= 1; i-- { // skip system prompt at index 0
-		msgTokens := estimateTokens([]provider.Message{msgs[i]})
-		if tokens+msgTokens > tokenBudget && len(tail) >= minMessages {
+	end := len(msgs) - 1
+	start := end
+	for ; start >= 1; start-- {
+		msgTokens := estimateTokens([]provider.Message{msgs[start]})
+		if tokens+msgTokens > tokenBudget && (end-start+1) >= minMessages {
 			break
 		}
-		tail = append([]provider.Message{msgs[i]}, tail...)
 		tokens += msgTokens
 	}
-	return tail
+	return msgs[start+1:]
 }
 
 // SoftCompactNotice returns a warning if context is above the soft threshold.
