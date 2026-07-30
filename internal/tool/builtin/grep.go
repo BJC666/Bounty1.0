@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	"bounty/internal/tool"
 )
@@ -43,6 +47,10 @@ func (GrepTool) Execute(ctx context.Context, args json.RawMessage) (string, erro
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
 			return "No matches found.", nil
 		}
+		// If rg not found, fall back to Go native regex
+		if _, ok := err.(*exec.Error); ok {
+			return grepFallback(params)
+		}
 		return string(output), fmt.Errorf("grep failed: %w", err)
 	}
 	out := string(output)
@@ -53,6 +61,55 @@ func (GrepTool) Execute(ctx context.Context, args json.RawMessage) (string, erro
 		} else {
 			out = out[:32000] + "\n... [truncated]"
 		}
+	}
+	return out, nil
+}
+
+// grepFallback searches files using Go's regexp when ripgrep is not available.
+func grepFallback(params struct {
+	Pattern string `json:"pattern"`
+	Path    string `json:"path"`
+	Glob    string `json:"glob"`
+}) (string, error) {
+	re, err := regexp.Compile(params.Pattern)
+	if err != nil {
+		return "", fmt.Errorf("invalid regex pattern: %w", err)
+	}
+
+	path := params.Path
+	if path == "" {
+		path = "."
+	}
+
+	var results []string
+	filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if params.Glob != "" {
+			matched, _ := filepath.Match(params.Glob, info.Name())
+			if !matched {
+				return nil
+			}
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		for i, line := range strings.Split(string(data), "\n") {
+			if re.MatchString(line) {
+				results = append(results, fmt.Sprintf("%s:%d: %s", p, i+1, line))
+			}
+		}
+		return nil
+	})
+
+	if len(results) == 0 {
+		return "No matches found.", nil
+	}
+	out := strings.Join(results, "\n")
+	if len(out) > 32000 {
+		out = out[:32000] + "\n... [truncated]"
 	}
 	return out, nil
 }

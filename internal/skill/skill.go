@@ -76,7 +76,7 @@ func parseSkillFile(path string) (*Skill, error) {
 	if err != nil {
 		return nil, err
 	}
-	content := string(data)
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
 	if !strings.HasPrefix(content, "---\n") {
 		return nil, nil
 	}

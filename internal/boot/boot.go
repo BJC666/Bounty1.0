@@ -327,8 +327,11 @@ func parseModel(full string) (provider, model string) {
 
 // dataDir returns the platform-standard data directory for Bounty.
 func dataDir() string {
+	if dir := os.Getenv("BOUNTY_HOME"); dir != "" {
+		return dir
+	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "share", "bounty")
+	return filepath.Join(home, "bounty-data")
 }
 
 // buildSystemPrompt constructs the system prompt by combining the base

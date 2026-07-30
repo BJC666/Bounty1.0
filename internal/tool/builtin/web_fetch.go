@@ -33,6 +33,9 @@ func (WebFetchTool) Execute(ctx context.Context, args json.RawMessage) (string, 
 		return "", fmt.Errorf("fetch failed: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
 	out := string(body)
 	if len(out) > 32000 {

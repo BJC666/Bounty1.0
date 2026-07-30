@@ -182,8 +182,8 @@ func (DeVETSimulateAttackTool) Execute(ctx context.Context, args json.RawMessage
 	var params struct{ AttackType string `json:"attack_type"` }
 	if err := json.Unmarshal(args, &params); err != nil { return "", err }
 
-	body := fmt.Sprintf(`{"attack_type":"%s"}`, params.AttackType)
-	resp, err := devetClient.Post(devetBaseURL+"/attack/simulate", "application/json", strings.NewReader(body))
+	reqBody, _ := json.Marshal(map[string]string{"attack_type": params.AttackType})
+	resp, err := devetClient.Post(devetBaseURL+"/attack/simulate", "application/json", bytes.NewReader(reqBody))
 	if err != nil { return "", fmt.Errorf("DeVET attack simulation failed: %w", err) }
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)

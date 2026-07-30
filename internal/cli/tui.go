@@ -102,7 +102,7 @@ func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case agentTextMsg:
-		m.isThinking = false; m.thinking.Reset(); m.scrollPos = 0
+		m.isThinking = false; m.thinking.Reset()
 		n := len(m.history)
 		if n > 0 && m.history[n-1].kind == "assist" {
 			m.history[n-1].text += msg.text
@@ -246,8 +246,8 @@ func (m *tuiModel) View() string {
 	if start < 0 { start = 0 }
 	end := start + msgH
 	if end > totalMsgs { end = totalMsgs }
-	visible := m.history
-	if start < end { visible = visible[start:end] }
+	var visible []histEntry
+	if start < end { visible = m.history[start:end] }
 
 	thumbH, thumbTop := 0, 0
 	if m.maxScroll > 0 {

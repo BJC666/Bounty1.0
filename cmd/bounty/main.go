@@ -104,7 +104,11 @@ func listSessions(cfg *config.Config) {
 	fmt.Println("Recent sessions:")
 	for _, s := range sessions {
 		t := time.Unix(s.UpdatedAt, 0).Format("2006-01-02 15:04")
-		fmt.Printf("  %s  [%s] %s\n", s.ID[:20], t, s.Title)
+		id := s.ID
+		if len(id) > 20 {
+			id = id[:20]
+		}
+		fmt.Printf("  %s  [%s] %s\n", id, t, s.Title)
 	}
 }
 
@@ -251,7 +255,10 @@ func dashboardCmd() {
 	mux.HandleFunc("/events", broadcast.serveSSE)
 
 	fmt.Println("Dashboard: http://localhost:8090/dashboard")
-	http.ListenAndServe(":8090", mux)
+	if err := http.ListenAndServe(":8090", mux); err != nil {
+		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func remoteCmd() {

@@ -155,6 +155,11 @@ func (c *Curator) Run() *CuratorReport {
 				m.State = StateActive
 				report.Reactivated = append(report.Reactivated, name)
 			}
+		case StateArchived:
+			if daysSinceUse <= c.cfg.InactiveAfterDays {
+				m.State = StateActive
+				report.Reactivated = append(report.Reactivated, name)
+			}
 		}
 	}
 

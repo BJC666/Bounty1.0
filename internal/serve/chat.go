@@ -183,6 +183,7 @@ function addMsg(kind, text) {
 }
 
 function sendMessage() {
+  if (sendBtn.disabled) return;
   const text = inputEl.value.trim();
   if (!text) return;
   addMsg('user', text);

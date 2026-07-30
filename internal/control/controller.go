@@ -49,16 +49,16 @@ func New(runner agent.Runner, sink event.Sink, st *store.Store, hooks *hook.Runn
 // updates, fires the UserPromptSubmit hook, then dispatches to the agent runner.
 func (c *Controller) Send(ctx context.Context, text string) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.hooks != nil {
 		result, err := c.hooks.Fire(ctx, hook.UserPromptSubmit, hook.Payload{
 			Event: hook.UserPromptSubmit, UserPrompt: text, SessionID: c.sessionID,
 		})
 		if err != nil {
+			c.mu.Unlock()
 			return err
 		}
 		if !result.Continue {
+			c.mu.Unlock()
 			return nil
 		}
 		if result.SystemMessage != "" {
@@ -67,6 +67,7 @@ func (c *Controller) Send(ctx context.Context, text string) error {
 	}
 
 	input := c.compose(text)
+	c.mu.Unlock()
 	return c.runner.Run(ctx, input)
 }
 
@@ -112,8 +113,12 @@ func (c *Controller) AddPendingMemory(note string) {
 }
 
 // AgentSession returns the current agent session for persistence access.
+// Returns nil if the runner is not an *agent.Agent.
 func (c *Controller) AgentSession() *agent.Session {
-	return c.runner.(*agent.Agent).Session()
+	if ag, ok := c.runner.(*agent.Agent); ok {
+		return ag.Session()
+	}
+	return nil
 }
 
 // SaveTurn persists the current conversation state to the store.

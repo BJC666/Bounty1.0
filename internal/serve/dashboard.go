@@ -99,7 +99,7 @@ func (h *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
             let cls = 'event-text';
             if (ev.Type === 'reasoning') cls = 'event-reasoning';
             if (ev.Type === 'tool_call') cls = 'event-tool';
-            eventsEl.innerHTML += '<span class="'+cls+'">'+ev.TextDelta+ev.ReasoningDelta+(ev.ToolName?' ['+ev.ToolName+']':'')+'</span>';
+            eventsEl.innerHTML += '<span class="'+cls+'">'+(ev.TextDelta||'')+(ev.ReasoningDelta||'')+(ev.ToolName?' ['+ev.ToolName+']':'')+'</span>';
             eventsEl.scrollTop = eventsEl.scrollHeight;
             if (eventsEl.children.length > 200) eventsEl.removeChild(eventsEl.firstChild);
         };
