@@ -62,10 +62,10 @@ type AttackResult struct {
 // BenchmarkResult from /api/benchmark/verify
 type BenchmarkResult struct {
 	Verification struct {
-		Runs    int     `json:"runs"`
-		MeanMS  float64 `json:"mean_ms"`
+		Runs     int     `json:"runs"`
+		MeanMS   float64 `json:"mean_ms"`
 		MedianMS float64 `json:"median_ms"`
-		P95MS   float64 `json:"p95_ms"`
+		P95MS    float64 `json:"p95_ms"`
 	} `json:"verification"`
 	BlameAttribution struct {
 		Runs   int     `json:"runs"`
