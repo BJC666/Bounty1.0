@@ -65,7 +65,7 @@ Bounty 调用 devet_simulate_attack(attack_type="A1_delegation_replacement")
 
 ## 技术栈
 
-- **Bounty**: Go 1.25+, SQLite+FTS5, Bubbletea TUI, 19 工具, 4 Provider
+- **Bounty**: Go 1.25+, SQLite+FTS5, Bubbletea TUI, 20 工具, 4 Provider
 - **DeVET**: Python 3.10+, FastAPI, 30 pytest (全部通过), 8 攻击 100% 检测率
 
 ## 项目结构

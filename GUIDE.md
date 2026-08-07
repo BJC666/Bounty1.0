@@ -286,6 +286,8 @@ Gateway 端点：
 | `/events` | GET | SSE 事件流（实时） |
 | `/webhook/{id}` | POST | Webhook 通道接收 |
 
+> **安全说明**：Gateway 默认仅监听 `127.0.0.1:8080`。所有端点受 `BOUNTY_AUTH_TOKEN` 保护（未设置该环境变量时放行，仅限本地开发）；请求需携带 `Authorization: Bearer <token>` 头（SSE 可用 `?token=` 查询参数）。Webhook 请求体上限 1 MiB。
+
 ### `bounty dashboard`
 
 启动 Web 仪表盘。
@@ -648,13 +650,16 @@ curl -X POST http://localhost:8080/webhook/myapp \
 ### 使用 HTTP API 通道
 
 ```bash
-# 发送消息
-curl -X POST http://localhost:9090/api/message \
+# 发送消息（设置 BOUNTY_AUTH_TOKEN 后需带认证头）
+curl -X POST http://127.0.0.1:9090/api/message \
+  -H "Authorization: Bearer $BOUNTY_AUTH_TOKEN" \
   -d '{"text": "分析今天的日志", "user_id": "ops"}'
 
 # 查看状态
-curl http://localhost:9090/api/status
+curl http://127.0.0.1:9090/api/status
 ```
+
+> **安全说明**：HTTP API 通道与 Gateway 一样默认仅监听 `127.0.0.1`，且受 `BOUNTY_AUTH_TOKEN` 保护——这些端点可以直接驱动 agent（含文件读写），切勿暴露到公网。
 
 ### Telegram Bot 配置
 
@@ -903,7 +908,7 @@ mcp__postgres__query
 
 ```bash
 CGO_ENABLED=0 go build -ldflags="-s -w" -o bounty ./cmd/bounty/
-# → ~15MB 单文件
+# → ~29MB 单文件
 ```
 
 ### Docker
@@ -943,7 +948,7 @@ Bounty/
 │   ├── agent/                ← Agent 引擎
 │   ├── boot/                 ← 组装层
 │   ├── control/              ← Controller
-│   ├── tool/builtin/         ← 14 个内置工具
+│   ├── tool/builtin/         ← 12 个内置工具
 │   ├── provider/             ← 4 个 Provider
 │   ├── channel/              ← 5 个通道
 │   ├── memory/               ← 记忆系统

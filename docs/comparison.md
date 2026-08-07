@@ -1,6 +1,6 @@
 # Bounty vs 参考项目 — 全功能对比
 
-> Bounty 24 commits · 50 Go files · 22 packages · 全部代码亲手实现
+> Bounty 37 commits · 91 Go files · 36 packages · 全部代码亲手实现
 
 ## 一、核心 Agent 循环
 
@@ -23,14 +23,14 @@
 |------|:---:|:---:|:---:|:---:|:---:|
 | Tool接口 | ✅ 5方法 | ✅ Descriptor | ✅ | ✅ registry | ✅ 5方法 |
 | Registry | ✅ 缓存Schema | ✅ | ✅ | ✅ | ✅ |
-| 工具所有权模型 | ❌ | ✅ 4种归属 | ❌ | ❌ | ❌ |
+| 工具所有权模型 | ✅ 4种归属 | ✅ 4种归属 | ❌ | ❌ | ❌ |
 | 只读标记 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 并行执行 | ✅ 只读并行 | ✅ | ✅ | ✅ 8线程 | ✅ |
 | 预览(Previewer) | ❌ | ❌ | ❌ | ❌ | ✅ |
 | 输出裁剪 | ✅ 32KB | ✅ | ✅ | ✅ 动态 | ✅ 32KB |
-| 内置工具数 | 11 | 25+ | 15+ | 30+ | 20+ |
+| 内置工具数 | 20 | 25+ | 15+ | 30+ | 20+ |
 
-**Bounty内置工具**: bash, read_file, write_file, edit_file, grep, glob, web_fetch, web_search(DDG), todo_write, code_index, task, read_only_task, fleet
+**Bounty内置工具**: bash, read_file, write_file, edit_file, grep, glob, web_fetch, web_search(DDG), todo_write, code_index, remember, browser, task, read_only_task, fleet + 5 个 devet_* 工具
 
 ## 三、模型/Provider
 
@@ -38,12 +38,12 @@
 |------|:---:|:---:|:---:|:---:|:---:|
 | DeepSeek | ✅ OpenAI兼容 | ✅ | ❌ | ✅ | ✅ 主要 |
 | Anthropic | ✅ Messages原生 | ✅ | ✅ 原生 | ✅ | ✅ |
-| OpenAI | ❌ | ✅ | ✅ | ✅ | ❌ |
-| Ollama | ❌ | ✅ | ❌ | ✅ | ❌ |
-| Provider数 | 2 | 30+ | 1(主要) | 32+ | 2 |
+| OpenAI | ✅ openai_native | ✅ | ✅ | ✅ | ❌ |
+| Ollama | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Provider数 | 4 | 30+ | 1(主要) | 32+ | 2 |
 | Credential Pool | ✅ 轮转+耗尽 | ✅ | ✅ | ✅ 122KB | ❌ |
 | 错误8分类 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 提示词缓存 | ❌ | ✅ | ✅ | ✅ cache_control | ✅ 8层 |
+| 提示词缓存 | ✅ 8层 | ✅ | ✅ | ✅ cache_control | ✅ 8层 |
 | 缓存诊断 | ✅ PrefixShape | ✅ | ✅ | ❌ | ✅ |
 | 双模型Coordinator | ❌ | ❌ | ❌ | ❌ | ✅ |
 | MoA多模型讨论 | ❌ | ❌ | ❌ | ✅ 60KB | ❌ |
@@ -57,9 +57,9 @@
 | 会话持久化 | ✅ SaveTurn | ✅ | ✅ | ✅ | ✅ |
 | 会话恢复 | ✅ --resume | ✅ | ✅ | ✅ | ✅ |
 | 层次化记忆 | ✅ 4级加载 | ✅ | ❌ | ✅ MEMORY.md | ✅ 4级 |
-| 自动记忆 | ❌ | ✅ | ❌ | ✅ remember | ✅ |
-| 记忆漂移检测 | ❌ | ❌ | ❌ | ✅ | ❌ |
-| 注入扫描 | ❌ | ❌ | ❌ | ✅ | ❌ |
+| 自动记忆 | ✅ remember | ✅ | ❌ | ✅ remember | ✅ |
+| 记忆漂移检测 | ✅ drift.go | ❌ | ❌ | ✅ | ❌ |
+| 注入扫描 | ✅ injection.go | ❌ | ❌ | ✅ | ❌ |
 | Honcho用户建模 | ❌ | ❌ | ❌ | ✅ | ❌ |
 
 ## 五、插件/扩展
@@ -68,21 +68,21 @@
 |------|:---:|:---:|:---:|:---:|:---:|
 | 插件清单 | ✅ TOML | ✅ JSON | ✅ JSON | ✅ register() | ✅ MCP Spec |
 | 技能系统 | ✅ YAML+索引 | ✅ | ✅ 3级加载 | ✅ 20分类 | ✅ |
-| 命令系统 | ❌ | ✅ | ✅ .md | ✅ | ✅ |
-| Agent定义 | ❌ | ✅ | ✅ .md | ✅ | ❌ |
+| 命令系统 | ✅ TOML | ✅ | ✅ .md | ✅ | ✅ |
+| Agent定义 | ✅ TOML | ✅ | ✅ .md | ✅ | ❌ |
 | 插件发现 | ✅ 多源扫描 | ✅ | ✅ | ✅ | ❌ |
 | MCP集成 | ✅ stdio | ✅ | ✅ mcp__* | ✅ 263KB | ✅ 完整 |
 | 技能安全扫描 | ❌ | ❌ | ❌ | ✅ AST审计 | ❌ |
-| 技能生命周期 | ❌ | ❌ | ❌ | ✅ 自动变迁 | ❌ |
+| 技能生命周期 | ✅ curator | ❌ | ❌ | ✅ 自动变迁 | ❌ |
 | 插件市场 | ❌ | ✅ ClawHub | ✅ marketplace | ✅ SkillsHub | ❌ |
 
 ## 六、通道/消息
 
 | 功能 | Bounty | OpenClaw | Claude Code | Hermes | Reasonix |
 |------|:---:|:---:|:---:|:---:|:---:|
-| 多通道支持 | ❌ | ✅ 20+ | ❌ CLI only | ✅ 20+ | ❌ 3 bot |
-| Channel接口 | ❌ | ✅ 30+slot | ❌ | ✅ | ❌ |
-| Telegram/Discord/Slack | ❌ | ✅ | ❌ | ✅ | ❌ |
+| 多通道支持 | ✅ 5通道 | ✅ 20+ | ❌ CLI only | ✅ 20+ | ❌ 3 bot |
+| Channel接口 | ✅ 12方法 | ✅ 30+slot | ❌ | ✅ | ❌ |
+| Telegram/Discord/Slack | ✅ Telegram | ✅ | ❌ | ✅ | ❌ |
 | WhatsApp/Signal | ❌ | ✅ | ❌ | ✅ | ❌ |
 
 ## 七、Hook/生命周期
@@ -147,8 +147,8 @@
 | CLI doctor | ✅ 诊断 | ✅ | ❌ | ✅ | ✅ |
 | 会话列表 | ✅ --list | ✅ | ✅ | ✅ | ❌ |
 | 会话恢复 | ✅ --resume | ✅ | ✅ | ✅ | ❌ |
-| Web仪表盘 | ❌ | ✅ React | ❌ | ✅ Vite+TS | ✅ 嵌入SPA |
-| 桌面应用 | ❌ | ✅ 原生 | ❌ | ✅ Tauri | ✅ Wails |
+| Web仪表盘 | ✅ dashboard | ✅ React | ❌ | ✅ Vite+TS | ✅ 嵌入SPA |
+| 桌面应用 | ✅ Wails实验 | ✅ 原生 | ❌ | ✅ Tauri | ✅ Wails |
 
 ## 十二、上下文管理
 
@@ -166,43 +166,43 @@
 
 | 功能 | Bounty | OpenClaw | Claude Code | Hermes | Reasonix |
 |------|:---:|:---:|:---:|:---:|:---:|
-| Background Review | ❌ | ❌ | ❌ | ✅ daemon线程 | ❌ |
-| Skill Nudge | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Curator调度 | ❌ | ❌ | ❌ | ✅ 7天周期 | ❌ |
+| Background Review | ✅ 后台反思 | ❌ | ❌ | ✅ daemon线程 | ❌ |
+| Skill Nudge | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Curator调度 | ✅ curator | ❌ | ❌ | ✅ 7天周期 | ❌ |
 | 技能自动创建 | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Learning Graph | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Learning Graph | ✅ | ❌ | ❌ | ✅ | ❌ |
 
 ## 十四、部署/基础设施
 
 | 功能 | Bounty | OpenClaw | Claude Code | Hermes | Reasonix |
 |------|:---:|:---:|:---:|:---:|:---:|
 | 单二进制 | ✅ go build | ❌ | ❌ npm包 | ❌ Python | ✅ CGO=0 |
-| Docker | ❌ | ✅ 21KB | ✅ DevContainer | ✅ 20KB | ❌ |
-| Homebrew | ❌ | ✅ | ✅ | ✅ | ✅ |
-| npm分发 | ❌ | ❌ | ✅ | ❌ | ✅ |
-| systemd | ❌ | ✅ | ❌ | ✅ | ❌ |
+| Docker | ✅ Dockerfile | ✅ 21KB | ✅ DevContainer | ✅ 20KB | ❌ |
+| Homebrew | ✅ 公式 | ✅ | ✅ | ✅ | ✅ |
+| npm分发 | ✅ npm/ | ❌ | ✅ | ❌ | ✅ |
+| systemd | ✅ 单元文件 | ✅ | ❌ | ✅ | ❌ |
 | K8s | ❌ | ✅ | ❌ | ❌ | ❌ |
-| SSH远程 | ❌ | ❌ | ❌ | ✅ | ✅ |
+| SSH远程 | ✅ ssh.go | ❌ | ❌ | ✅ | ✅ |
 
 ## 十五、特性覆盖率总览
 
 | 类别 | Bounty | OpenClaw | Claude Code | Hermes | Reasonix |
 |------|:---:|:---:|:---:|:---:|:---:|
 | 核心Agent循环 | 🟢 8/10 | 🟢 9/10 | 🟢 闭源 | 🟢 10/10 | 🟢 10/10 |
-| 工具系统 | 🟡 6/8 | 🟢 8/8 | 🟢 7/8 | 🟢 8/8 | 🟢 8/8 |
-| Provider | 🟡 7/10 | 🟢 10/10 | 🟡 5/10 | 🟢 10/10 | 🟡 7/10 |
-| 记忆/持久化 | 🟡 5/9 | 🟡 6/9 | 🟡 2/9 | 🟢 9/9 | 🟡 5/9 |
-| 插件/扩展 | 🟡 4/9 | 🟢 9/9 | 🟢 9/9 | 🟢 9/9 | 🟡 4/9 |
-| 通道/消息 | 🔴 0/4 | 🟢 4/4 | 🔴 1/4 | 🟢 4/4 | 🔴 1/4 |
+| 工具系统 | 🟢 7/8 | 🟢 8/8 | 🟢 7/8 | 🟢 8/8 | 🟢 8/8 |
+| Provider | 🟢 9/10 | 🟢 10/10 | 🟡 5/10 | 🟢 10/10 | 🟡 7/10 |
+| 记忆/持久化 | 🟢 8/9 | 🟡 6/9 | 🟡 2/9 | 🟢 9/9 | 🟡 5/9 |
+| 插件/扩展 | 🟢 7/9 | 🟢 9/9 | 🟢 9/9 | 🟢 9/9 | 🟡 4/9 |
+| 通道/消息 | 🟢 3/4 | 🟢 4/4 | 🔴 1/4 | 🟢 4/4 | 🔴 1/4 |
 | Hook/生命周期 | 🟢 8/9 | 🟡 6/9 | 🟢 9/9 | 🟡 4/9 | 🟡 4/9 |
 | 安全/权限 | 🟡 5/8 | 🟡 5/8 | 🟢 8/8 | 🟡 6/8 | 🟢 8/8 |
 | 子代理 | 🟢 7/7 | 🟡 5/7 | 🟡 5/7 | 🟡 5/7 | 🟢 7/7 |
 | 配置 | 🟢 6/6 | 🟢 6/6 | 🟡 3/6 | 🟢 6/6 | 🟢 6/6 |
-| CLI/UI | 🟡 4/7 | 🟡 5/7 | 🟡 3/7 | 🟢 7/7 | 🟢 7/7 |
+| CLI/UI | 🟢 6/7 | 🟡 5/7 | 🟡 3/7 | 🟢 7/7 | 🟢 7/7 |
 | 上下文管理 | 🟢 7/7 | 🟡 5/7 | 🟡 3/7 | 🟡 5/7 | 🟢 7/7 |
-| 自改进 | 🔴 0/5 | 🔴 0/5 | 🔴 0/5 | 🟢 5/5 | 🔴 0/5 |
-| 部署 | 🔴 1/8 | 🟢 6/8 | 🟡 3/8 | 🟢 7/8 | 🟡 4/8 |
-| **总计** | **62/107** | **86/107** | **63/107** | **95/107** | **77/107** |
+| 自改进 | 🟢 4/5 | 🔴 0/5 | 🔴 0/5 | 🟢 5/5 | 🔴 0/5 |
+| 部署 | 🟢 7/8 | 🟢 6/8 | 🟡 3/8 | 🟢 7/8 | 🟡 4/8 |
+| **总计** | **86/107** | **86/107** | **63/107** | **95/107** | **77/107** |
 
 🟢 ≥80% | 🟡 50-79% | 🔴 <50%
 
@@ -210,20 +210,20 @@
 
 | 维度 | 优势 |
 |------|------|
-| **代码质量** | 50个Go文件，全手写，零依赖膨胀(Bubbletea除外)，24次独立commit |
-| **架构清晰** | 22个单一职责package，依赖方向单一，接口边界明确 |
-| **编译产物** | `CGO_ENABLED=0 go build` → 单二进制，无运行时依赖 |
+| **代码质量** | 91个Go文件，全手写，零依赖膨胀(Bubbletea除外)，37次独立commit |
+| **架构清晰** | 36个单一职责package，依赖方向单一，接口边界明确 |
+| **编译产物** | `CGO_ENABLED=0 go build` → ~29MB 单二进制，无运行时依赖 |
 | **子代理系统** | Fleet是唯一同时实现并行+路径冲突检测+写者调度的 |
 | **Hook覆盖** | 9事件全覆盖，唯一同时覆盖Stop/SubagentStop/Notification的 |
 | **上下文管理** | 唯一同时有Token压缩+Checkpoint+环境探针+缓存诊断的 |
 
 ## Bounty 需要追赶的方向
 
-| 优先级 | 方向 | 差距 |
+| 优先级 | 方向 | 现状 |
 |--------|------|------|
-| 🔴 P0 | 通道/消息系统 | 完全没有多通道支持 |
-| 🔴 P0 | 自改进/学习 | Hermes独有，其余项目也没有 |
-| 🟡 P1 | 插件生态 | 缺少Commands/Agents定义、市场 |
-| 🟡 P1 | 部署矩阵 | 缺少Docker/Homebrew/npm |
-| 🟢 P2 | Provider矩阵 | 只有2个，可加Ollama/OpenAI |
-| 🟢 P2 | Web UI | 没有仪表盘/桌面应用 |
+| ✅ 已完成 | 通道/消息系统 | 5 通道（Terminal/Webhook/HTTP API/Telegram/Gateway SSE） |
+| ✅ 已完成 | 自改进/学习 | 后台反思 + Skill Nudge + Curator + Learning Graph |
+| 🟡 进行中 | 插件生态 | Commands/Agents 已支持；技能安全扫描、插件市场待补 |
+| ✅ 已完成 | 部署矩阵 | Docker/Homebrew/npm/systemd/SSH 均已提供 |
+| ✅ 已完成 | Provider矩阵 | 4 个（DeepSeek/Anthropic/Ollama/OpenAI native） |
+| ✅ 已完成 | Web UI | dashboard 仪表盘 + Wails 桌面（实验） |
