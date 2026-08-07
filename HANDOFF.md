@@ -305,7 +305,7 @@ ask → auto → yolo → plan，配合 Bash 模式匹配白/黑名单 + 文件�
 | Phase 2 | 通道系统 + 插件生态 | 3 |
 | Phase 3 | 自改进 + 部署矩阵 | 4 |
 | Phase 4 | 通道矩阵 + Learning Graph | 2 |
-| 审查修复 | 3 轮审查 → 71 bugs 修复 | 8 |
+| 审查修复 | 3 轮审查 → 36 bugs 修复(7 CRITICAL + 14 HIGH + 15 MEDIUM) | 8 |
 | 竞赛冲刺 | 文档 + DeVET 融入 + 不足修复 | 6 |
 
 ---

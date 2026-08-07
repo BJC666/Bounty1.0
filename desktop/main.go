@@ -1,5 +1,8 @@
 // desktop/main.go — Experimental Wails desktop app entry point.
 // Build: cd desktop && wails build
+//
+//go:build wails
+
 package main
 
 import (

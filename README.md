@@ -75,9 +75,9 @@ Bounty1.0/
 ├── bounty.exe          ← Go 单二进制
 ├── bounty.toml         ← 配置
 ├── start.bat           ← 一键启动
-├── DeVET/              ← DeVET 验证系统（独立运行）
+├── DeVET/（独立目录，不在本仓库）
 │   ├── backend/        ← FastAPI (:8765)
 │   ├── frontend/       ← Web UI (:8766)
 │   └── vet-repro/      ← Python 核心库 + 30 tests
-└── internal/           ← Bounty Go 源码 (28 packages)
+└── internal/           ← Bounty Go 源码 (27 个内部包，共 39 个 Go 包)
 ```
