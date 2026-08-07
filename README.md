@@ -1,5 +1,7 @@
 # Bounty 1.0 — AI Agent Framework × DeVET
 
+![CI](https://github.com/BJC666/Bounty1.0/actions/workflows/ci.yml/badge.svg)
+
 通用 AI 智能体框架，集成 DeVET 多智能体委托验证系统。
 
 ## 快速开始
