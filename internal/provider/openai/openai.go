@@ -48,7 +48,7 @@ type chatRequest struct {
 
 type chatMessage struct {
 	Role      string         `json:"role"`
-	Content   string         `json:"content,omitempty"`
+	Content   string         `json:"content"`
 	ToolCalls []chatToolCall `json:"tool_calls,omitempty"`
 	Name      string         `json:"name,omitempty"`
 	ToolID    string         `json:"tool_call_id,omitempty"`
@@ -143,15 +143,20 @@ func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tool
 	}
 
 	ch := make(chan provider.StreamEvent, 10)
+	done := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		resp.Body.Close()
+		select {
+		case <-ctx.Done():
+			resp.Body.Close()
+		case <-done:
+		}
 	}()
-	go p.readStream(ctx, resp.Body, ch)
+	go p.readStream(ctx, resp.Body, ch, done)
 	return ch, nil
 }
 
-func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.StreamEvent) {
+func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.StreamEvent, done chan struct{}) {
+	defer close(done)
 	defer close(ch)
 	defer body.Close()
 

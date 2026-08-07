@@ -86,9 +86,25 @@ func (h *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
     <script>
         // Load sessions
         fetch('/dashboard/api/sessions').then(r => r.json()).then(data => {
-            document.getElementById('sessions').innerHTML = data.sessions.map(s =>
-                '<div style="padding:8px;border-bottom:1px solid #333"><strong>'+s.title+'</strong><br><small>'+s.model+' · '+s.turns+' turns</small></div>'
-            ).join('') || '<p>No sessions</p>';
+            const sessionsEl = document.getElementById('sessions');
+            sessionsEl.textContent = '';
+            if (!data.sessions || !data.sessions.length) {
+                sessionsEl.innerHTML = '<p>No sessions</p>';
+                return;
+            }
+            data.sessions.forEach(s => {
+                const div = document.createElement('div');
+                div.style.padding = '8px';
+                div.style.borderBottom = '1px solid #333';
+                const strong = document.createElement('strong');
+                strong.textContent = s.title || '';
+                div.appendChild(strong);
+                div.appendChild(document.createElement('br'));
+                const small = document.createElement('small');
+                small.textContent = (s.model || '') + ' · ' + (s.turns || 0) + ' turns';
+                div.appendChild(small);
+                sessionsEl.appendChild(div);
+            });
         });
 
         // SSE event stream
@@ -99,7 +115,10 @@ func (h *DashboardHandler) index(w http.ResponseWriter, r *http.Request) {
             let cls = 'event-text';
             if (ev.Type === 'reasoning') cls = 'event-reasoning';
             if (ev.Type === 'tool_call') cls = 'event-tool';
-            eventsEl.innerHTML += '<span class="'+cls+'">'+(ev.TextDelta||'')+(ev.ReasoningDelta||'')+(ev.ToolName?' ['+ev.ToolName+']':'')+'</span>';
+            const span = document.createElement('span');
+            span.className = cls;
+            span.textContent = (ev.TextDelta||'')+(ev.ReasoningDelta||'')+(ev.ToolName?' ['+ev.ToolName+']':'');
+            eventsEl.appendChild(span);
             eventsEl.scrollTop = eventsEl.scrollHeight;
             if (eventsEl.children.length > 200) eventsEl.removeChild(eventsEl.firstChild);
         };

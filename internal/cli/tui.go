@@ -63,6 +63,8 @@ type histEntry struct{ kind, text string; time time.Time }
 type tuiModel struct {
 	ctrl      *control.Controller
 	cfg       *config.Config
+	sink      *tuiSink
+	asker     TerminalAsker
 	modelName, sessionID string
 	inputBuf  strings.Builder
 	history   []histEntry
@@ -203,13 +205,42 @@ func (m *tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEnter:
 		text := strings.TrimSpace(m.inputBuf.String())
 		if text == "" { return m, nil }
+
+		// Local slash commands — interpreted client-side
+		if strings.HasPrefix(text, "/new") {
+			title := strings.TrimSpace(strings.TrimPrefix(text, "/new"))
+			if title == "" { title = "New Session" }
+			m.switchSession(title)
+			m.inputBuf.Reset()
+			return m, nil
+		}
+		if strings.HasPrefix(text, "/switch ") {
+			id := strings.TrimSpace(strings.TrimPrefix(text, "/switch "))
+			m.loadSession(id)
+			m.inputBuf.Reset()
+			return m, nil
+		}
+		if text == "/list" || text == "/sessions" {
+			m.showSessionList()
+			m.inputBuf.Reset()
+			return m, nil
+		}
+		if strings.HasPrefix(text, "/rename ") {
+			title := strings.TrimSpace(strings.TrimPrefix(text, "/rename "))
+			m.renameSession(title)
+			m.inputBuf.Reset()
+			return m, nil
+		}
+
+		// Normal message — send to agent
 		m.inputBuf.Reset(); m.errMsg = ""; m.thinking.Reset()
 		m.isThinking = true; m.currentTool = ""; m.turnCount++; m.scrollPos = 0
 		m.history = append(m.history, histEntry{kind: "user", text: text})
 		return m, m.sendMessage(text)
 	case tea.KeyBackspace:
 		s := m.inputBuf.String()
-		if len(s) > 0 { m.inputBuf.Reset(); m.inputBuf.WriteString(s[:len(s)-1]) }
+		runes := []rune(s)
+		if len(runes) > 0 { m.inputBuf.Reset(); m.inputBuf.WriteString(string(runes[:len(runes)-1])) }
 		return m, nil
 	case tea.KeySpace:
 		m.inputBuf.WriteRune(' '); return m, nil
@@ -326,9 +357,116 @@ func (m *tuiModel) renderLine(h histEntry, w int) string {
 	case "user":  return accentBold.Render("● ") + creamBold.Render(trunc(h.text, w-4))
 	case "assist": return "    " + creamText.Render(trunc(h.text, w-6))
 	case "thinking": return dimText.Render("┊ " + trunc(h.text, w-4))
+	case "info": return mutedText.Render("  ℹ " + h.text)
 	case "error": return errText.Render("  " + trunc(h.text, w-4))
 	}
 	return trunc(h.text, w)
+}
+
+// ---------------------------------------------------------------------------
+// Session management (local slash commands)
+// ---------------------------------------------------------------------------
+
+func (m *tuiModel) switchSession(title string) {
+	m.ctrl.SaveTurn()
+	newID := fmt.Sprintf("session-%d", time.Now().UnixNano())
+	// Rebuild controller with the new session
+	newCtrl, err := boot.RebuildSession(m.ctrl, m.cfg, newID, m.sink, m.asker)
+	if err != nil {
+		m.history = append(m.history, histEntry{kind: "error", text: fmt.Sprintf("Failed to create session: %v", err)})
+		return
+	}
+	m.ctrl = newCtrl
+	m.sessionID = newID
+	m.history = nil
+	m.turnCount = 0
+	m.totalTokens = 0
+	m.ioTokens = 0
+	m.ooTokens = 0
+	m.toolCalls = 0
+	m.scrollPos = 0
+	m.startTime = time.Now()
+	m.history = append(m.history, histEntry{kind: "info", text: fmt.Sprintf("New session: %s (%s)", title, shortID(newID))})
+}
+
+func (m *tuiModel) loadSession(id string) {
+	m.ctrl.SaveTurn()
+	sessions, err := m.ctrl.ListSessions(100)
+	if err != nil {
+		m.history = append(m.history, histEntry{kind: "error", text: "Failed to list sessions: " + err.Error()})
+		return
+	}
+	for _, s := range sessions {
+		if strings.HasPrefix(s.ID, id) || s.ID == id {
+			// Rebuild controller with the loaded session
+			newCtrl, buildErr := boot.RebuildSession(m.ctrl, m.cfg, s.ID, m.sink, m.asker)
+			if buildErr != nil {
+				m.history = append(m.history, histEntry{kind: "error", text: fmt.Sprintf("Failed to load session: %v", buildErr)})
+				return
+			}
+			m.ctrl = newCtrl
+			m.sessionID = s.ID
+			m.history = nil
+			m.turnCount = 0
+			m.totalTokens = 0
+			m.ioTokens = 0
+			m.ooTokens = 0
+			m.toolCalls = 0
+			m.scrollPos = 0
+			m.startTime = time.Now()
+			// Replay loaded messages into history
+			msgs, loadErr := m.ctrl.GetStore().LoadMessages(s.ID)
+			if loadErr == nil {
+				for _, msg := range msgs {
+					switch msg.Role {
+					case "user":
+						m.history = append(m.history, histEntry{kind: "user", text: msg.Content})
+						m.turnCount++
+					case "assistant":
+						m.history = append(m.history, histEntry{kind: "assist", text: msg.Content})
+					}
+				}
+			}
+			m.history = append(m.history, histEntry{kind: "info", text: fmt.Sprintf("Switched to: %s", s.Title)})
+			return
+		}
+	}
+	m.history = append(m.history, histEntry{kind: "error", text: "Session not found: " + id})
+}
+
+func (m *tuiModel) showSessionList() {
+	sessions, err := m.ctrl.ListSessions(20)
+	if err != nil {
+		m.history = append(m.history, histEntry{kind: "error", text: "Failed to list sessions"})
+		return
+	}
+	m.history = append(m.history, histEntry{kind: "info", text: "── Sessions ──"})
+	for _, s := range sessions {
+		marker := " "
+		if s.ID == m.sessionID { marker = "*" }
+		t := time.Unix(s.UpdatedAt, 0).Format("01-02 15:04")
+		m.history = append(m.history, histEntry{kind: "info",
+			text: fmt.Sprintf("%s %s  %s  %s", marker, shortID(s.ID), t, s.Title)})
+	}
+}
+
+func (m *tuiModel) renameSession(title string) {
+	st := m.ctrl.GetStore()
+	sess, err := st.LoadSession(m.sessionID)
+	if err == nil {
+		sess.Title = title
+		st.SaveSession(sess)
+		m.history = append(m.history, histEntry{kind: "info", text: "Session renamed to: " + title})
+	} else {
+		m.history = append(m.history, histEntry{kind: "error", text: "Failed to rename session: " + err.Error()})
+	}
+}
+
+func shortID(id string) string {
+	parts := strings.Split(id, "-")
+	if len(parts) >= 2 { return parts[len(parts)-1][:8] }
+	if len(id) > 12 { return id[:12] }
+	return id
 }
 
 func (m *tuiModel) sendMessage(text string) tea.Cmd {
@@ -339,7 +477,11 @@ func (m *tuiModel) sendMessage(text string) tea.Cmd {
 }
 
 func emojiFor(n string) string { if e, ok := toolEmoji[n]; ok { return e }; return "⚡" }
-func trunc(s string, max int) string { if len(s) <= max { return s }; return s[:max-1] + "…" }
+func trunc(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max { return s }
+	return string(runes[:max-1]) + "…"
+}
 
 type agentTextMsg struct{ text string }
 type agentReasoningMsg struct{ text string }
@@ -370,9 +512,11 @@ func RunTUI(cfg *config.Config, sid string) error {
 	m := newTUIModel(cfg, sid)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	s := &tuiSink{program: p}
-	c, err := boot.Build(cfg, boot.Options{MaxSteps: cfg.Agent.MaxSteps, Sink: s, Posture: permission.PostureAuto, SessionID: sid})
+	m.asker = TerminalAsker{}
+	c, err := boot.Build(cfg, boot.Options{MaxSteps: cfg.Agent.MaxSteps, Sink: s, Posture: permission.PostureAuto, SessionID: sid, Asker: m.asker})
 	if err != nil { return err }
 	m.ctrl = c
+	m.sink = s
 	_, err = p.Run()
 	return err
 }

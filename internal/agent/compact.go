@@ -21,24 +21,21 @@ type CompactConfig struct {
 	MaxContext int
 }
 
-// estimateTokens provides a rough token count (4 chars approx 1 token for ASCII,
-// ~1 char per token for CJK and other multibyte).
+// estimateTokens provides a rough token count (~4 ASCII chars per token,
+// ~1 CJK char per token). Uses rune-level iteration for accurate CJK counting.
 func estimateTokens(msgs []provider.Message) int {
 	total := 0
 	for _, m := range msgs {
-		// Each message has ~4 tokens overhead (role markers)
-		total += 4
-		// Count characters: ~4 ASCII chars per token, ~1 CJK char per token
-		asciiCount := 0
-		for _, r := range m.Content {
+		total += 4 // per-message overhead
+		runes := []rune(m.Content)
+		for _, r := range runes {
 			if r <= 0x7F {
-				asciiCount++
+				total++
 			} else {
-				total++ // CJK and other multibyte: ~1 char per token
+				total += 2 // CJK and other multibyte
 			}
 		}
-		total += asciiCount / 4
-		total += len(m.Content) / 4 // overall estimate
+		total += len(runes) / 4 // blended estimate
 		total += len(m.ToolName) / 4
 		for _, tc := range m.ToolCalls {
 			total += len(tc.Name)/4 + len(tc.Args)/4
@@ -117,7 +114,7 @@ func tailMessages(msgs []provider.Message, tokenBudget int, minMessages int) []p
 	start := end
 	for ; start >= 1; start-- {
 		msgTokens := estimateTokens([]provider.Message{msgs[start]})
-		if tokens+msgTokens > tokenBudget && (end-start+1) >= minMessages {
+		if tokens+msgTokens > tokenBudget && (end-start) >= minMessages {
 			break
 		}
 		tokens += msgTokens

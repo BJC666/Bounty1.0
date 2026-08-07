@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"sync"
 	"time"
@@ -69,12 +70,14 @@ func (h *Host) Connect(spec Spec) error {
 	}
 
 	client := &Client{spec: spec, trans: trans}
-	if err := client.handshake(context.Background()); err != nil {
+	connectCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := client.handshake(connectCtx); err != nil {
 		trans.close()
 		return fmt.Errorf("handshake %s: %w", spec.Name, err)
 	}
 
-	if err := client.discoverTools(context.Background()); err != nil {
+	if err := client.discoverTools(connectCtx); err != nil {
 		trans.close()
 		return fmt.Errorf("discover tools %s: %w", spec.Name, err)
 	}
@@ -103,6 +106,7 @@ func (h *Host) Close() {
 	for _, c := range h.clients {
 		c.trans.close()
 	}
+	h.clients = make(map[string]*Client)
 }
 
 // ── Client methods ──
@@ -205,12 +209,12 @@ func (t *mcpTool) Execute(ctx context.Context, args json.RawMessage) (string, er
 // ── stdio transport ──
 
 type stdioTransport struct {
-	cmd    *exec.Cmd
-	stdin  *json.Encoder
-	stdout *json.Decoder
-	mu     sync.Mutex
-	reqID  int
-	kill   *time.Timer
+	cmd     *exec.Cmd
+	stdin   *json.Encoder
+	mu      sync.Mutex
+	reqID   int
+	kill    *time.Timer
+	pending map[int]chan jsonrpcResponse
 }
 
 func newStdioTransport(spec Spec) (*stdioTransport, error) {
@@ -236,15 +240,21 @@ func newStdioTransport(spec Spec) (*stdioTransport, error) {
 	}
 
 	t := &stdioTransport{
-		cmd:    cmd,
-		stdin:  json.NewEncoder(stdin),
-		stdout: json.NewDecoder(stdout),
+		cmd:     cmd,
+		stdin:   json.NewEncoder(stdin),
+		pending: make(map[int]chan jsonrpcResponse),
 	}
 
 	// Kill the process if it doesn't complete the handshake in time.
 	t.kill = time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 		cmd.Process.Kill()
 	})
+
+	// A single long-lived reader goroutine decodes responses and routes them
+	// to the caller registered for each request ID. This avoids leaking a
+	// goroutine when a call is cancelled: the reader stays alive for the
+	// lifetime of the transport.
+	go t.readLoop(stdout)
 
 	return t, nil
 }
@@ -268,7 +278,6 @@ type jsonrpcResponse struct {
 
 func (t *stdioTransport) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 
 	// Cancel the startup kill timer once a successful call happens.
 	if t.kill != nil {
@@ -277,34 +286,61 @@ func (t *stdioTransport) call(ctx context.Context, method string, params any) (j
 	}
 
 	t.reqID++
-	req := jsonrpcRequest{JSONRPC: "2.0", ID: t.reqID, Method: method, Params: params}
+	reqID := t.reqID
+	ch := make(chan jsonrpcResponse, 1)
+	t.pending[reqID] = ch
+	req := jsonrpcRequest{JSONRPC: "2.0", ID: reqID, Method: method, Params: params}
 	if err := t.stdin.Encode(req); err != nil {
+		delete(t.pending, reqID)
+		t.mu.Unlock()
 		return nil, err
 	}
-
-	// Read response with context support via a goroutine.
-	type result struct {
-		resp jsonrpcResponse
-		err  error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		var resp jsonrpcResponse
-		err := t.stdout.Decode(&resp)
-		ch <- result{resp, err}
-	}()
+	t.mu.Unlock()
 
 	select {
 	case <-ctx.Done():
+		// Drop this caller's registration; the reader goroutine stays alive.
+		t.mu.Lock()
+		delete(t.pending, reqID)
+		t.mu.Unlock()
 		return nil, ctx.Err()
-	case r := <-ch:
-		if r.err != nil {
-			return nil, r.err
+	case resp, ok := <-ch:
+		if !ok {
+			return nil, fmt.Errorf("MCP transport closed")
 		}
-		if r.resp.Error != nil {
-			return nil, fmt.Errorf("MCP error %d: %s", r.resp.Error.Code, r.resp.Error.Message)
+		if resp.Error != nil {
+			return nil, fmt.Errorf("MCP error %d: %s", resp.Error.Code, resp.Error.Message)
 		}
-		return r.resp.Result, nil
+		return resp.Result, nil
+	}
+}
+
+// readLoop is the single stdout reader for this transport. Responses are
+// routed to the pending channel registered for their request ID; responses
+// with unknown IDs (notifications, events) are ignored.
+func (t *stdioTransport) readLoop(stdout io.Reader) {
+	dec := json.NewDecoder(stdout)
+	for {
+		var resp jsonrpcResponse
+		if err := dec.Decode(&resp); err != nil {
+			// Transport closed or broken — fail all in-flight calls.
+			t.mu.Lock()
+			for id, ch := range t.pending {
+				delete(t.pending, id)
+				close(ch)
+			}
+			t.mu.Unlock()
+			return
+		}
+		t.mu.Lock()
+		ch, ok := t.pending[resp.ID]
+		if ok {
+			delete(t.pending, resp.ID)
+		}
+		t.mu.Unlock()
+		if ok {
+			ch <- resp
+		}
 	}
 }
 

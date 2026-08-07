@@ -3,10 +3,14 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"bounty/internal/event"
 	"bounty/internal/provider"
@@ -49,6 +53,7 @@ type Asker interface {
 // Checkpointer captures file state before edits and persists turn metadata so
 // the agent can rewind to a previous turn.
 type Checkpointer interface {
+	BeginTurn(prompt string, msgIndex int)
 	Capture(path string) error
 	SaveTurn(prompt string, msgIndex int) error
 	GetTurn() int
@@ -73,6 +78,7 @@ type Options struct {
 // execute them, feed results back, repeat.
 type Agent struct {
 	prov         provider.Provider
+	provMu       sync.RWMutex
 	tools        *tool.Registry
 	session      *Session
 	sessMu       sync.Mutex
@@ -150,6 +156,50 @@ func (a *Agent) Session() *Session {
 	return a.session
 }
 
+// SetProvider atomically swaps the LLM provider used by the agent. It is safe
+// to call while a Run loop is active; the new provider takes effect on the next
+// streaming call. When modelName is non-empty the session system prompt is
+// rewritten so the agent can report the model it is running on.
+func (a *Agent) SetProvider(p provider.Provider, modelName string) {
+	a.provMu.Lock()
+	a.prov = p
+	a.provMu.Unlock()
+	if modelName != "" {
+		a.updateModelName(modelName)
+	}
+}
+
+// updateModelName rewrites the model identity embedded in the session system
+// prompt so the agent answers "which model are you?" truthfully after a switch.
+func (a *Agent) updateModelName(model string) {
+	a.sessMu.Lock()
+	defer a.sessMu.Unlock()
+	if a.session == nil {
+		return
+	}
+	a.session.SetSystemPrompt(rewriteModelName(a.session.SystemPrompt, model))
+}
+
+var (
+	runOnRe  = regexp.MustCompile(`running on \*\*[^*]*\*\*`)
+	answerRe = regexp.MustCompile(`(?m)answer with: .*$`)
+)
+
+// rewriteModelName replaces the model identity in the system prompt. It targets
+// the two markers emitted by boot.buildSystemPrompt.
+func rewriteModelName(prompt, model string) string {
+	prompt = runOnRe.ReplaceAllString(prompt, "running on **"+model+"**")
+	prompt = answerRe.ReplaceAllString(prompt, "answer with: "+model)
+	return prompt
+}
+
+// provider returns the current LLM provider under a read lock.
+func (a *Agent) provider() provider.Provider {
+	a.provMu.RLock()
+	defer a.provMu.RUnlock()
+	return a.prov
+}
+
 // Run drives a single user input through the agent loop until the model stops
 // requesting tool calls or the step limit is reached.
 func (a *Agent) Run(ctx context.Context, input string) error {
@@ -157,6 +207,7 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 	turnMsgIndex := sess.Len() // snapshot before adding user message
 
 	if a.checkpointer != nil {
+		a.checkpointer.BeginTurn(input, turnMsgIndex)
 		a.checkpointer.SaveTurn(input, turnMsgIndex)
 	}
 
@@ -169,9 +220,10 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 
 		messages := sess.Snapshot()
 		schemas := a.tools.Schemas()
+		prov := a.provider()
 
 		// Compute prompt cache shape to track cache hits and misses.
-		if provWithCache, ok := a.prov.(interface{ Version() string }); ok {
+		if provWithCache, ok := prov.(interface{ Version() string }); ok {
 			shape := provider.ComputeShape(sess.SystemPrompt, schemas, provWithCache.Version())
 			if a.haveLastPrefixShape {
 				a.cacheStats.Record(a.lastPrefixShape, shape)
@@ -180,10 +232,20 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 			a.haveLastPrefixShape = true
 		}
 
-		ch, err := a.prov.Stream(ctx, messages, schemas, provider.StreamOpts{Temperature: a.temp})
+		ch, err := prov.Stream(ctx, messages, schemas, provider.StreamOpts{Temperature: a.temp})
 		if err != nil {
+			if maxRetries, backoff, ok := retryConfig(err); ok && maxRetries > 0 {
+				for retry := 0; retry < maxRetries; retry++ {
+					time.Sleep(backoff(retry))
+					ch, err = prov.Stream(ctx, messages, schemas, provider.StreamOpts{Temperature: a.temp})
+					if err == nil {
+						goto streamOK
+					}
+				}
+			}
 			return fmt.Errorf("step %d: %w", step, err)
 		}
+	streamOK:
 
 		var textBuf, reasoningBuf strings.Builder
 		var toolCalls []provider.ToolCall
@@ -191,7 +253,8 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 
 		for ev := range ch {
 			if ev.Err != nil {
-				return fmt.Errorf("stream error step %d: %w", step, ev.Err)
+				a.sink.Emit(event.Event{Type: "warning", TextDelta: fmt.Sprintf("stream error step %d: %v, recovering with partial response", step, ev.Err)})
+				break
 			}
 			if ev.Delta != nil {
 				if ev.Delta.Reasoning != "" {
@@ -338,7 +401,20 @@ func (a *Agent) executeOne(ctx context.Context, tc provider.ToolCall) toolResult
 			return toolResult{CallID: tc.ID, Name: tc.Name, Err: err}
 		}
 		if dec == Deny {
-			return toolResult{CallID: tc.ID, Name: tc.Name, Err: fmt.Errorf("denied")}
+			return toolResult{CallID: tc.ID, Name: tc.Name, Err: fmt.Errorf("%s denied by permission policy", tc.Name)}
+		}
+		if dec == Ask {
+			if a.asker != nil {
+				answer, askErr := a.asker.Ask(ctx, fmt.Sprintf("Allow %s to run %s?", tc.Name, toolLabel(tc.Name, tc.Args)), []string{"allow", "deny"})
+				if askErr != nil {
+					return toolResult{CallID: tc.ID, Name: tc.Name, Err: fmt.Errorf("approval query failed: %w", askErr)}
+				}
+				if !isApproval(answer) {
+					return toolResult{CallID: tc.ID, Name: tc.Name, Err: fmt.Errorf("%s denied by user", tc.Name)}
+				}
+			} else {
+				return toolResult{CallID: tc.ID, Name: tc.Name, Err: fmt.Errorf("%s requires user approval; retry without it or switch to a less restrictive posture", tc.Name)}
+			}
 		}
 	}
 	if a.hooks != nil {
@@ -361,7 +437,16 @@ func (a *Agent) executeOne(ctx context.Context, tc provider.ToolCall) toolResult
 		if len(runes) > a.maxToolOut/4 {
 			result = string(runes[:a.maxToolOut/4]) + "\n... [truncated]"
 		} else {
-			result = result[:a.maxToolOut] + "\n... [truncated]"
+			// Multi-byte content within the rune budget but over the byte
+			// cap — trim to the cap without splitting a UTF-8 rune.
+			keep := len(result)
+			for keep > a.maxToolOut {
+				keep--
+				for keep > 0 && (result[keep]&0xC0) == 0x80 {
+					keep--
+				}
+			}
+			result = result[:keep] + "\n... [truncated]"
 		}
 	}
 
@@ -395,6 +480,74 @@ func errStr(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// toolLabel returns a short, human-readable description of a tool call for
+// approval prompts (the bash command or the target file path when present).
+func toolLabel(name string, args json.RawMessage) string {
+	var cmd struct {
+		Command  string `json:"command"`
+		FilePath string `json:"file_path"`
+		Path     string `json:"path"`
+		URL      string `json:"url"`
+	}
+	if err := json.Unmarshal(args, &cmd); err == nil {
+		switch {
+		case cmd.Command != "":
+			if len(cmd.Command) > 120 {
+				return cmd.Command[:120] + "..."
+			}
+			return cmd.Command
+		case cmd.FilePath != "":
+			return cmd.FilePath
+		case cmd.Path != "":
+			return cmd.Path
+		case cmd.URL != "":
+			return cmd.URL
+		}
+	}
+	return name
+}
+
+// isApproval reports whether a user's answer to an approval prompt grants
+// permission. Accepts allow/yes/y/1 (case-insensitive).
+func isApproval(answer string) bool {
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "allow", "yes", "y", "1":
+		return true
+	}
+	return false
+}
+
+// retryConfig checks whether err (or any error in its chain) carries retry
+// parameters — a MaxRetries count and a BackoffFunc. It uses reflection so it
+// works with RetryableError types from any provider package.
+func retryConfig(err error) (maxRetries int, backoff func(int) time.Duration, ok bool) {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		rv := reflect.ValueOf(e)
+		if rv.Kind() == reflect.Ptr {
+			rv = rv.Elem()
+		}
+		if rv.Kind() != reflect.Struct {
+			continue
+		}
+		mr := rv.FieldByName("MaxRetries")
+		bf := rv.FieldByName("BackoffFunc")
+		if !mr.IsValid() || !bf.IsValid() || mr.Kind() != reflect.Int {
+			continue
+		}
+		n := int(mr.Int())
+		if n <= 0 {
+			continue
+		}
+		bfVal := bf.Interface()
+		fn, isFn := bfVal.(func(int) time.Duration)
+		if !isFn || fn == nil {
+			continue
+		}
+		return n, fn, true
+	}
+	return 0, nil, false
 }
 
 // extractWritePath pulls the target file path from tool arguments. It handles

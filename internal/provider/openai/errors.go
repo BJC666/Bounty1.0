@@ -20,14 +20,17 @@ func classifyError(resp *http.Response) error {
 		return &RetryableError{Category: "RateLimit", Message: bodyStr, MaxRetries: 5,
 			BackoffFunc: exponentialBackoff}
 	case resp.StatusCode == 400 && strings.Contains(bodyStr, "context_length"):
-		return &RetryableError{Category: "ContextOverflow", Message: bodyStr, MaxRetries: 1}
+		return &RetryableError{Category: "ContextOverflow", Message: bodyStr, MaxRetries: 1,
+			BackoffFunc: linearBackoff}
 	case resp.StatusCode == 401 || resp.StatusCode == 403:
-		return &RetryableError{Category: "AuthError", Message: bodyStr, MaxRetries: 0}
+		return &RetryableError{Category: "AuthError", Message: bodyStr, MaxRetries: 0,
+			BackoffFunc: linearBackoff}
 	case resp.StatusCode >= 500:
 		return &RetryableError{Category: "ServerError", Message: bodyStr, MaxRetries: 3,
 			BackoffFunc: linearBackoff}
 	case resp.StatusCode == 400 && strings.Contains(bodyStr, "content_filter"):
-		return &RetryableError{Category: "ContentFilter", Message: bodyStr, MaxRetries: 1}
+		return &RetryableError{Category: "ContentFilter", Message: bodyStr, MaxRetries: 1,
+			BackoffFunc: linearBackoff}
 	default:
 		return &FatalError{Category: "FatalError", Message: bodyStr}
 	}

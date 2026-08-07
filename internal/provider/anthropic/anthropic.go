@@ -136,15 +136,35 @@ type sseContentBlock struct {
 func (p *Provider) Version() string { return "anthropic/2023-06-01" }
 
 func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tools []json.RawMessage, opts provider.StreamOpts) (<-chan provider.StreamEvent, error) {
-	// Separate system prompt from messages
+	// Separate system prompt from messages. Tool results must be sent as
+	// tool_result blocks inside a user message — the Anthropic Messages API
+	// only accepts "user" and "assistant" roles, so consecutive tool
+	// messages are accumulated and flushed as a single user message.
 	var systemBlocks []textBlock
 	var apiMsgs []apiMessage
+	var pendingToolResults []contentBlock
+
+	flushToolResults := func() {
+		if len(pendingToolResults) == 0 {
+			return
+		}
+		apiMsgs = append(apiMsgs, apiMessage{Role: "user", Content: pendingToolResults})
+		pendingToolResults = nil
+	}
 
 	for _, m := range messages {
 		if m.Role == "system" {
 			systemBlocks = append(systemBlocks, textBlock{Type: "text", Text: m.Content})
 			continue
 		}
+		if m.Role == "tool" {
+			pendingToolResults = append(pendingToolResults, contentBlock{
+				Type: "tool_result", ToolUseID: m.ToolID,
+				Content: m.Content,
+			})
+			continue
+		}
+		flushToolResults()
 		am := apiMessage{Role: m.Role}
 		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
 			var blocks []contentBlock
@@ -153,22 +173,20 @@ func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tool
 			}
 			for _, tc := range m.ToolCalls {
 				var input interface{}
-				json.Unmarshal(tc.Args, &input)
+				if err := json.Unmarshal(tc.Args, &input); err != nil {
+					return nil, fmt.Errorf("tool call %s has invalid JSON arguments: %w", tc.Name, err)
+				}
 				blocks = append(blocks, contentBlock{
 					Type: "tool_use", ID: tc.ID, Name: tc.Name, Input: input,
 				})
 			}
 			am.Content = blocks
-		} else if m.Role == "tool" {
-			am.Content = []contentBlock{{
-				Type: "tool_result", ToolUseID: m.ToolID,
-				Content: m.Content,
-			}}
 		} else {
 			am.Content = m.Content
 		}
 		apiMsgs = append(apiMsgs, am)
 	}
+	flushToolResults()
 
 	// Convert tools to Anthropic format
 	apiTools := make([]apiTool, len(tools))
@@ -231,15 +249,20 @@ func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tool
 	}
 
 	ch := make(chan provider.StreamEvent, 10)
+	done := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		resp.Body.Close()
+		select {
+		case <-ctx.Done():
+			resp.Body.Close()
+		case <-done:
+		}
 	}()
-	go p.readStream(ctx, resp.Body, ch)
+	go p.readStream(ctx, resp.Body, ch, done)
 	return ch, nil
 }
 
-func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.StreamEvent) {
+func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<- provider.StreamEvent, done chan struct{}) {
+	defer close(done)
 	defer close(ch)
 	defer body.Close()
 

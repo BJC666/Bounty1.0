@@ -1,6 +1,9 @@
 package event
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"sync"
+)
 
 // Sink is the unified event output interface consumed by all frontends.
 type Sink interface {
@@ -44,3 +47,50 @@ var Discard Sink = discardSink{}
 type discardSink struct{}
 
 func (discardSink) Emit(Event) {}
+
+// Fanout is a Sink that broadcasts every event to all registered sinks.
+// Build uses one fanout so the agent, controller, and dynamically attached
+// frontends (e.g. an SSE stream) all observe the same events.
+type Fanout struct {
+	mu    sync.Mutex
+	sinks []Sink
+	// Redact, when set, is applied to TextDelta and ReasoningDelta before
+	// events reach any sink. It lets callers strip secrets (API keys,
+	// private keys) from live streams without touching persisted data.
+	Redact func(string) string
+}
+
+func NewFanout() *Fanout { return &Fanout{} }
+
+// Add registers a sink to receive future events.
+func (f *Fanout) Add(s Sink) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sinks = append(f.sinks, s)
+}
+
+// Remove unregisters a sink.
+func (f *Fanout) Remove(s Sink) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, existing := range f.sinks {
+		if existing == s {
+			f.sinks = append(f.sinks[:i], f.sinks[i+1:]...)
+			return
+		}
+	}
+}
+
+func (f *Fanout) Emit(ev Event) {
+	f.mu.Lock()
+	sinks := append([]Sink(nil), f.sinks...)
+	redact := f.Redact
+	f.mu.Unlock()
+	if redact != nil {
+		ev.TextDelta = redact(ev.TextDelta)
+		ev.ReasoningDelta = redact(ev.ReasoningDelta)
+	}
+	for _, s := range sinks {
+		s.Emit(ev)
+	}
+}

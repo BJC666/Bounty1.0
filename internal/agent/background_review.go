@@ -71,8 +71,8 @@ func (br *BackgroundReviewer) RunReview(ctx context.Context, messages []provider
 		m := messages[i]
 		if m.Role == "user" || m.Role == "assistant" {
 			content := m.Content
-			if len(content) > 500 {
-				content = content[:500] + "..."
+			if runes := []rune(content); len(runes) > 500 {
+				content = string(runes[:500]) + "..."
 			}
 			convBuilder.WriteString(fmt.Sprintf("[%s] %s\n", m.Role, content))
 			count++

@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 
 	"bounty/internal/agent"
@@ -112,6 +113,37 @@ func (c *Controller) AddPendingMemory(note string) {
 	c.pending = append(c.pending, note)
 }
 
+// SwitchProvider hot-swaps the LLM provider used by the underlying agent. The
+// new provider takes effect from the next model call; modelName is embedded in
+// the session system prompt so the agent can self-identify after the switch.
+func (c *Controller) SwitchProvider(p provider.Provider, modelName string) error {
+	ag, ok := c.runner.(*agent.Agent)
+	if !ok {
+		return fmt.Errorf("runner is not an agent, cannot switch provider")
+	}
+	ag.SetProvider(p, modelName)
+	return nil
+}
+
+// GetStore returns the underlying store for direct access (e.g., by export handlers).
+func (c *Controller) GetStore() *store.Store { return c.store }
+
+// AddSink attaches a dynamic event sink (e.g. an SSE stream). It only takes
+// effect when the controller's sink is an *event.Fanout, which boot.Build
+// always provides.
+func (c *Controller) AddSink(s event.Sink) {
+	if f, ok := c.sink.(*event.Fanout); ok {
+		f.Add(s)
+	}
+}
+
+// RemoveSink detaches a previously added dynamic sink.
+func (c *Controller) RemoveSink(s event.Sink) {
+	if f, ok := c.sink.(*event.Fanout); ok {
+		f.Remove(s)
+	}
+}
+
 // AgentSession returns the current agent session for persistence access.
 // Returns nil if the runner is not an *agent.Agent.
 func (c *Controller) AgentSession() *agent.Session {
@@ -124,6 +156,9 @@ func (c *Controller) AgentSession() *agent.Session {
 // SaveTurn persists the current conversation state to the store.
 func (c *Controller) SaveTurn() error {
 	sess := c.AgentSession()
+	if sess == nil {
+		return fmt.Errorf("no agent session")
+	}
 	messages := sess.Snapshot()
 
 	// Update session metadata
@@ -165,11 +200,11 @@ func (c *Controller) ListSessions(limit int) ([]store.Session, error) {
 func extractTitle(messages []provider.Message) string {
 	for _, m := range messages {
 		if m.Role == "user" && m.Content != "" {
-			title := m.Content
-			if len(title) > 80 {
-				title = title[:80] + "..."
+			runes := []rune(m.Content)
+			if len(runes) > 80 {
+				return string(runes[:80]) + "..."
 			}
-			return title
+			return m.Content
 		}
 	}
 	return "New Session"

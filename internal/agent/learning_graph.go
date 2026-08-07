@@ -60,6 +60,14 @@ func (lg *LearningGraph) load() {
 		lg.Nodes = saved.Nodes
 		lg.Edges = saved.Edges
 	}
+	// A persisted file with "nodes": null (or an empty object) must not leave
+	// the map nil — later AddNode calls would panic.
+	if lg.Nodes == nil {
+		lg.Nodes = make(map[string]*GraphNode)
+	}
+	if lg.Edges == nil {
+		lg.Edges = []GraphEdge{}
+	}
 }
 
 func (lg *LearningGraph) save() error {
@@ -77,6 +85,7 @@ func (lg *LearningGraph) AddNode(id, nodeType, label string) *GraphNode {
 
 	if n, ok := lg.Nodes[id]; ok {
 		n.UsedCount++
+		lg.save()
 		return n
 	}
 	n := &GraphNode{
@@ -204,13 +213,22 @@ func (lg *LearningGraph) Summary() string {
 			if i >= 5 {
 				break
 			}
-			sourceLabel := lg.Nodes[e.Source].Label
-			targetLabel := lg.Nodes[e.Target].Label
+			sourceLabel := nodeLabel(lg.Nodes[e.Source], e.Source)
+			targetLabel := nodeLabel(lg.Nodes[e.Target], e.Target)
 			sb.WriteString(fmt.Sprintf("- %s → %s (%.1f)\n", sourceLabel, targetLabel, e.Weight))
 		}
 	}
 
 	return sb.String()
+}
+
+// nodeLabel returns the label of a graph node, falling back to its ID when
+// the node is missing (e.g. an edge referencing a pruned node).
+func nodeLabel(n *GraphNode, id string) string {
+	if n == nil {
+		return id
+	}
+	return n.Label
 }
 
 // topNodesLocked is the internal, already-locked variant of TopNodes.

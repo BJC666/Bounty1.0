@@ -35,8 +35,11 @@ func (rs *RememberStore) Save(name, description, content string) error {
 	if err := os.MkdirAll(rs.dir, 0755); err != nil {
 		return err
 	}
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("memory name must not be empty")
+	}
 
-	filename := strings.ToLower(strings.ReplaceAll(name, " ", "-")) + ".md"
+	filename := sanitizeFilename(name) + ".md"
 	path := filepath.Join(rs.dir, filename)
 
 	entry := fmt.Sprintf(`---
@@ -54,6 +57,25 @@ created: %s
 
 	// Update index
 	return rs.rebuildIndex()
+}
+
+// sanitizeFilename converts a memory name into a safe file name. Characters
+// outside [a-z0-9_-] are stripped (spaces and dots become dashes), which
+// prevents path traversal via name values such as "../evil" or "a\\b".
+func sanitizeFilename(name string) string {
+	var sb strings.Builder
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			sb.WriteRune(r)
+		case r == ' ' || r == '.':
+			sb.WriteRune('-')
+		}
+	}
+	if sb.Len() == 0 {
+		return "memory"
+	}
+	return sb.String()
 }
 
 // rebuildIndex regenerates MEMORY.md from all .md files.

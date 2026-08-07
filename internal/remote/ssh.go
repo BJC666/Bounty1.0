@@ -27,7 +27,9 @@ func NewSSH(host, user, key string, port int) *SSHSession {
 // Run executes a command on the remote host via ssh.
 func (s *SSHSession) Run(ctx context.Context, command string) (string, error) {
 	args := []string{
-		"-o", "StrictHostKeyChecking=accept-new",
+		// Require the host key to already be in known_hosts — accepting
+		// unknown keys on first connect (TOFU) exposes the session to MITM.
+		"-o", "StrictHostKeyChecking=yes",
 		"-o", "ConnectTimeout=10",
 		"-p", fmt.Sprintf("%d", s.Port),
 	}
@@ -53,7 +55,7 @@ func (s *SSHSession) Run(ctx context.Context, command string) (string, error) {
 // Copy copies a local file to the remote host via scp.
 func (s *SSHSession) Copy(ctx context.Context, localPath, remotePath string) error {
 	args := []string{
-		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "StrictHostKeyChecking=yes",
 		"-P", fmt.Sprintf("%d", s.Port),
 	}
 	if s.Key != "" {

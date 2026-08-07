@@ -59,7 +59,16 @@ func (GrepTool) Execute(ctx context.Context, args json.RawMessage) (string, erro
 		if len(runes) > 32000/4 {
 			out = string(runes[:32000/4]) + "\n... [truncated]"
 		} else {
-			out = out[:32000] + "\n... [truncated]"
+			// Multi-byte content within the rune budget but over the byte
+			// cap — trim to the cap without splitting a UTF-8 rune.
+			keep := len(out)
+			for keep > 32000 {
+				keep--
+				for keep > 0 && (out[keep]&0xC0) == 0x80 {
+					keep--
+				}
+			}
+			out = out[:keep] + "\n... [truncated]"
 		}
 	}
 	return out, nil

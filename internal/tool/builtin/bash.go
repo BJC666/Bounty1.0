@@ -4,9 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"runtime"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"bounty/internal/tool"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 type BashTool struct {
@@ -39,6 +45,13 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 	}
 	if params.Timeout > 0 {
 		timeout = time.Duration(params.Timeout) * time.Millisecond
+		// Clamp to [1s, 600s] regardless of what the model supplies.
+		if timeout < time.Second {
+			timeout = time.Second
+		}
+		if timeout > 600*time.Second {
+			timeout = 600 * time.Second
+		}
 	}
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -52,7 +65,15 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 		return output, nil
 	}
 
-	cmd := exec.CommandContext(execCtx, "sh", "-c", params.Command)
+	shell, shellFlag := "sh", "-c"
+	if _, err := exec.LookPath("sh"); err != nil {
+		shell, shellFlag = "cmd", "/c" // Windows fallback
+	}
+	command := params.Command
+	if shell == "sh" {
+		command = prepareCommand(command)
+	}
+	cmd := exec.CommandContext(execCtx, shell, shellFlag, command)
 	if b.Sandbox != nil {
 		cmd = b.Sandbox(cmd)
 	}
@@ -60,10 +81,103 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 	if execCtx.Err() == context.DeadlineExceeded {
 		return "", &TimeoutError{Command: params.Command, Timeout: timeout}
 	}
+	out := decodeOutput(output)
 	if err != nil {
-		return string(output), &ExecError{Command: params.Command, Output: string(output), Err: err}
+		return out, &ExecError{Command: params.Command, Output: out, Err: err}
 	}
-	return string(output), nil
+	return out, nil
+}
+
+// prepareCommand rewrites unquoted Windows drive paths (D:\文件夹\a.png) into
+// forward-slash form (D:/文件夹/a.png). The POSIX shell used on Windows (e.g.
+// Git Bash sh) strips backslashes from unquoted tokens, so such paths would
+// otherwise arrive mangled ("The filename, directory name, or volume label
+// syntax is incorrect." / 文件名、目录名或卷标语法不正确). Quoted paths are
+// left untouched: the shell's own path conversion already handles them.
+func prepareCommand(command string) string {
+	if runtime.GOOS != "windows" {
+		return command
+	}
+	var sb strings.Builder
+	sb.Grow(len(command))
+	inSingle, inDouble, escaped := false, false, false
+	for i := 0; i < len(command); {
+		c := command[i]
+		if escaped {
+			sb.WriteByte(c)
+			escaped = false
+			i++
+			continue
+		}
+		switch c {
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+		case '\\':
+			if inDouble {
+				escaped = true
+			}
+		}
+		if !inSingle && !inDouble && !escaped && isDrivePathStart(command, i) {
+			sb.WriteByte(c)
+			sb.WriteByte(command[i+1])
+			i += 2
+			for i < len(command) {
+				cc := command[i]
+				if cc == '\\' {
+					sb.WriteByte('/')
+					i++
+					continue
+				}
+				if isPathTokenEnd(cc) {
+					break
+				}
+				sb.WriteByte(cc)
+				i++
+			}
+			continue
+		}
+		sb.WriteByte(c)
+		i++
+	}
+	return sb.String()
+}
+
+func isDrivePathStart(command string, i int) bool {
+	return i+2 < len(command) && isASCIILetter(command[i]) && command[i+1] == ':' && command[i+2] == '\\'
+}
+
+func isASCIILetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// isPathTokenEnd reports whether c terminates an unquoted Windows path token.
+func isPathTokenEnd(c byte) bool {
+	switch c {
+	case ' ', '\t', '\r', '\n', '|', '&', ';', '<', '>', '(', ')', '[', ']', '{', '}', '*', '?', '`', '\'', '"':
+		return true
+	}
+	return false
+}
+
+// decodeOutput converts raw command output into UTF-8 text. Native Windows
+// tools (cmd.exe, PowerShell 5.x) emit GBK bytes on Chinese systems; decoding
+// them keeps error messages readable instead of garbled.
+func decodeOutput(out []byte) string {
+	if utf8.Valid(out) {
+		return string(out)
+	}
+	if runtime.GOOS == "windows" {
+		if s, _, err := transform.String(simplifiedchinese.GBK.NewDecoder(), string(out)); err == nil {
+			return s
+		}
+	}
+	return string(out)
 }
 
 type TimeoutError struct {

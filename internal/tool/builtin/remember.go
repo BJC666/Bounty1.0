@@ -34,9 +34,9 @@ func (r *RememberTool) Execute(ctx context.Context, args json.RawMessage) (strin
 		return "", err
 	}
 
-	// Injection scan
-	if !memory.IsSafe(params.Content) {
-		return "", fmt.Errorf("memory content rejected: possible prompt injection detected")
+	// Injection + self-replication scan
+	if !memory.IsSafeAll(params.Content) {
+		return "", fmt.Errorf("memory content rejected: possible prompt injection or self-replicating prompt detected")
 	}
 
 	store := memory.NewRememberStore(r.ProjectRoot)

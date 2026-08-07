@@ -17,7 +17,11 @@ func runShellHook(ctx context.Context, cfg HookConfig, payload Payload) (*Result
 	defer cancel()
 
 	payloadJSON, _ := json.Marshal(payload)
-	cmd := exec.CommandContext(execCtx, "sh", "-c", cfg.Command)
+	shell, shellFlag := "sh", "-c"
+	if _, err := exec.LookPath("sh"); err != nil {
+		shell, shellFlag = "cmd", "/c"
+	}
+	cmd := exec.CommandContext(execCtx, shell, shellFlag, cfg.Command)
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, "HOOK_PAYLOAD="+string(payloadJSON))
 

@@ -9,6 +9,9 @@ type Doc struct {
 	Name    string
 	Source  string // "project", "user", "global", "ancestor"
 	Content string
+	// InjectionHits lists prompt-injection / self-replication markers found
+	// in the document. Empty when the document is clean.
+	InjectionHits []string
 }
 
 // Load loads memory files from all levels.
@@ -45,6 +48,11 @@ func Load(projectRoot string) ([]Doc, error) {
 		docs = append(docs, Doc{Name: "bounty", Source: "project", Content: content})
 	}
 
+	// Flag documents that carry injection / self-replication markers.
+	for i := range docs {
+		docs[i] = scanDoc(docs[i])
+	}
+
 	return docs, nil
 }
 
@@ -58,4 +66,14 @@ func readMemoryFile(path string) (string, bool) {
 		content = content[:32*1024] + "\n... [truncated]"
 	}
 	return content, true
+}
+
+// scanDoc attaches any injection / self-replication markers found in the
+// document content so callers can treat suspicious memory as data rather
+// than instructions.
+func scanDoc(d Doc) Doc {
+	if hits := ScanAll(d.Content); len(hits) > 0 {
+		d.InjectionHits = hits
+	}
+	return d
 }

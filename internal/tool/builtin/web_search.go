@@ -46,10 +46,10 @@ func (w *WebSearchTool) Execute(ctx context.Context, args json.RawMessage) (stri
 	// Filter by allowed/blocked domains
 	filtered := make([]searchResult, 0, len(results))
 	for _, r := range results {
-		if containsAny(r.URL, params.BlockedDomains) {
+		if containsAnyDomain(r.URL, params.BlockedDomains) {
 			continue
 		}
-		if len(params.AllowedDomains) > 0 && !containsAny(r.URL, params.AllowedDomains) {
+		if len(params.AllowedDomains) > 0 && !containsAnyDomain(r.URL, params.AllowedDomains) {
 			continue
 		}
 		filtered = append(filtered, r)
@@ -137,9 +137,21 @@ func (w *WebSearchTool) searchDDG(ctx context.Context, query string) []searchRes
 	return results
 }
 
-func containsAny(s string, substrs []string) bool {
-	for _, sub := range substrs {
-		if strings.Contains(strings.ToLower(s), strings.ToLower(sub)) {
+// containsAnyDomain reports whether the URL's host matches any of the given
+// domains, honoring subdomain boundaries: "example.com" matches
+// "www.example.com" but not "evil-example.com".
+func containsAnyDomain(rawURL string, domains []string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	for _, d := range domains {
+		d = strings.ToLower(strings.TrimSpace(d))
+		if d == "" {
+			continue
+		}
+		if host == d || strings.HasSuffix(host, "."+d) {
 			return true
 		}
 	}

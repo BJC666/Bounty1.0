@@ -40,7 +40,9 @@ func (s *Store) Discover(paths []string) error {
 				return nil
 			}
 			if !info.IsDir() && strings.HasSuffix(info.Name(), ".md") {
-				if skill, err := parseSkillFile(path); err == nil {
+				// parseSkillFile returns (nil, nil) for files without
+				// frontmatter — skip those instead of appending a nil skill.
+				if skill, err := parseSkillFile(path); err == nil && skill != nil {
 					s.skills = append(s.skills, skill)
 					s.enabled = append(s.enabled, skill)
 				}

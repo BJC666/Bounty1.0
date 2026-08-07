@@ -7,7 +7,9 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
+	"bounty/internal/auth"
 	"bounty/internal/control"
 	"bounty/internal/event"
 )
@@ -60,7 +62,7 @@ func (g *Gateway) Start(ctx context.Context) error {
 		}
 		channelID := r.URL.Path[len("/webhook/"):]
 		var msg Message
-		if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&msg); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
@@ -88,9 +90,8 @@ func (g *Gateway) Start(ctx context.Context) error {
 		}
 
 		sink := &sseSink{w: w, flusher: flusher}
-		// Note: in a full implementation, the sink would be registered
-		// with the controller and receive events from agent turns
-		_ = sink
+		g.ctrl.AddSink(sink)
+		defer g.ctrl.RemoveSink(sink)
 
 		<-r.Context().Done()
 	})
@@ -104,7 +105,7 @@ func (g *Gateway) Start(ctx context.Context) error {
 		var req struct {
 			Message string `json:"message"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
@@ -117,8 +118,16 @@ func (g *Gateway) Start(ctx context.Context) error {
 	})
 
 	g.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", g.port),
-		Handler: mux,
+		// Bind to loopback by default — the channel gateway can drive the
+		// agent (file read/write, shell), so it must not be exposed to the
+		// LAN or the public internet.
+		Addr:              fmt.Sprintf("127.0.0.1:%d", g.port),
+		Handler:           auth.Middleware(mux),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	// Start channels
@@ -126,7 +135,7 @@ func (g *Gateway) Start(ctx context.Context) error {
 		return fmt.Errorf("start channels: %w", err)
 	}
 
-	log.Printf("Gateway listening on :%d", g.port)
+	log.Printf("Gateway listening on 127.0.0.1:%d", g.port)
 	return g.server.ListenAndServe()
 }
 
@@ -148,6 +157,9 @@ func (s *sseSink) Emit(ev event.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	data, _ := json.Marshal(ev)
+	// Extend the write deadline so an idle SSE stream survives the
+	// server-level WriteTimeout.
+	http.NewResponseController(s.w).SetWriteDeadline(time.Now().Add(30 * time.Second))
 	fmt.Fprintf(s.w, "data: %s\n\n", data)
 	s.flusher.Flush()
 }

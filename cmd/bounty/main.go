@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"bounty/internal/auth"
 	"bounty/internal/boot"
 	"bounty/internal/channel"
 	"bounty/internal/cli"
@@ -130,6 +131,7 @@ func runCmd() {
 		Sink:      &consoleSink{},
 		Posture:   permission.PostureAuto,
 		SessionID: fmt.Sprintf("oneshot-%d", time.Now().UnixNano()),
+		Asker:     cli.TerminalAsker{},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -208,7 +210,7 @@ func doctorCmd() {
 	}
 	fmt.Printf("   Max steps: %d\n", cfg.Agent.MaxSteps)
 	fmt.Printf("   Compact ratio: %.1f\n", cfg.Agent.CompactRatio)
-	fmt.Printf("   Builtin tools: 19 (14 core + 5 DeVET integration)\n")
+	fmt.Printf("   Tools: 20 total (12 builtin + 5 DeVET + 3 subagent)\n")
 }
 
 func dashboardCmd() {
@@ -235,6 +237,22 @@ func dashboardCmd() {
 
 	chatHandler := &serve.ChatHandler{
 		SendFn: func(text string) error { return ctrl.Send(context.Background(), text) },
+		SwitchFn: func(req serve.ModelSwitchRequest) error {
+			kind := req.Kind
+			if kind == "" {
+				kind = "openai"
+			}
+			prov, err := boot.BuildProvider(kind, req.BaseURL, req.APIKey, req.Model, 0)
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := boot.TestProvider(ctx, prov); err != nil {
+				return fmt.Errorf("连接测试失败: %v", err)
+			}
+			return ctrl.SwitchProvider(prov, req.Model)
+		},
 	}
 
 	dashboard := &serve.DashboardHandler{
@@ -248,14 +266,29 @@ func dashboardCmd() {
 		},
 	}
 
+	exportHandler := &serve.ExportHandler{
+		LoadSessionFn:  ctrl.GetStore().LoadSession,
+		LoadMessagesFn: ctrl.GetStore().LoadMessages,
+	}
+
 	mux := http.NewServeMux()
-	mux.Handle("/", chatHandler)
-	mux.Handle("/dashboard", dashboard)
-	mux.Handle("/dashboard/", dashboard)
-	mux.HandleFunc("/events", broadcast.serveSSE)
+	mux.Handle("/", auth.Middleware(chatHandler))
+	mux.Handle("/dashboard", auth.Middleware(dashboard))
+	mux.Handle("/dashboard/", auth.Middleware(dashboard))
+	mux.Handle("/export", auth.Middleware(exportHandler))
+	mux.Handle("/events", auth.Middleware(http.HandlerFunc(broadcast.serveSSE)))
 
 	fmt.Println("Dashboard: http://localhost:8090/dashboard")
-	if err := http.ListenAndServe(":8090", mux); err != nil {
+	server := &http.Server{
+		Addr:              ":8090",
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
 	}
@@ -283,25 +316,43 @@ type broadcastSink struct {
 }
 func newBroadcastSink() *broadcastSink { return &broadcastSink{clients: make(map[chan string]bool)} }
 func (b *broadcastSink) Emit(ev event.Event) {
-	data, _ := json.Marshal(ev)
-	b.mu.Lock(); defer b.mu.Unlock()
+	data, err := json.Marshal(ev)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "SSE: json marshal error: %v\n", err)
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.clients) == 0 {
+		fmt.Fprintf(os.Stderr, "SSE: no clients connected, dropping event type=%s\n", ev.Type)
+		return
+	}
 	for ch := range b.clients {
-		select { case ch <- string(data): default: }
+		select {
+		case ch <- string(data):
+		default:
+			fmt.Fprintf(os.Stderr, "SSE: dropping event type=%s (buffer full)\n", ev.Type)
+		}
 	}
 }
+
+
 func (b *broadcastSink) serveSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	flusher, ok := w.(http.Flusher)
 	if !ok { http.Error(w, "streaming not supported", 500); return }
-	ch := make(chan string, 64)
+	ch := make(chan string, 512)
 	b.mu.Lock(); b.clients[ch] = true; b.mu.Unlock()
 	defer func() { b.mu.Lock(); delete(b.clients, ch); close(ch); b.mu.Unlock() }()
 	for {
 		select {
 		case <-r.Context().Done(): return
 		case data := <-ch:
+			// Extend the write deadline so an idle SSE stream survives the
+			// server-level WriteTimeout.
+			http.NewResponseController(w).SetWriteDeadline(time.Now().Add(30 * time.Second))
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
 		}

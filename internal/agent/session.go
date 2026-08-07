@@ -25,6 +25,18 @@ func NewSession(systemPrompt string) *Session {
 	}
 }
 
+// SetSystemPrompt replaces the system prompt in both the SystemPrompt field
+// and the leading system message, keeping the two in sync. It is used by
+// runtime model switching so the agent can identify the model it runs on.
+func (s *Session) SetSystemPrompt(prompt string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.SystemPrompt = prompt
+	if len(s.Messages) > 0 && s.Messages[0].Role == "system" {
+		s.Messages[0].Content = prompt
+	}
+}
+
 // Add appends a message. Safe for concurrent use.
 func (s *Session) Add(msg provider.Message) {
 	s.mu.Lock()

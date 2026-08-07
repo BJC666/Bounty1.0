@@ -1,12 +1,14 @@
 package environment
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Info holds the results of environment probing.
@@ -70,7 +72,11 @@ func probe() *Info {
 }
 
 func probeCmd(cmd string, args ...string) string {
-	c := exec.Command(cmd, args...)
+	// Bound every probe so a hung tool (e.g. docker daemon) cannot stall the
+	// environment probe and with it the whole build.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	c := exec.CommandContext(ctx, cmd, args...)
 	out, err := c.Output()
 	if err != nil {
 		return ""

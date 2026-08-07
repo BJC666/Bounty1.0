@@ -27,15 +27,25 @@ func classifyAnthropicError(resp *http.Response) error {
 	if errType == "" {
 		errType = bodyStr
 	}
+	// Anthropic reports context-length overflows in error.message (e.g.
+	// "maximum context length exceeded"), not in error.type, so match both.
+	errMsg := strings.ToLower(ae.Error.Message)
+	contextOverflow := strings.Contains(errType, "context") ||
+		strings.Contains(errType, "token") ||
+		strings.Contains(errMsg, "context length") ||
+		strings.Contains(errMsg, "token limit") ||
+		strings.Contains(errMsg, "too many tokens")
 
 	switch {
 	case resp.StatusCode == 429:
 		return &RetryableError{Category: "RateLimit", Message: errType, MaxRetries: 5,
 			BackoffFunc: exponentialBackoff}
-	case resp.StatusCode == 400 && (strings.Contains(errType, "context") || strings.Contains(errType, "token")):
-		return &RetryableError{Category: "ContextOverflow", Message: errType, MaxRetries: 1}
+	case resp.StatusCode == 400 && contextOverflow:
+		return &RetryableError{Category: "ContextOverflow", Message: errType, MaxRetries: 1,
+			BackoffFunc: linearBackoff}
 	case resp.StatusCode == 401 || resp.StatusCode == 403:
-		return &RetryableError{Category: "AuthError", Message: errType, MaxRetries: 0}
+		return &RetryableError{Category: "AuthError", Message: errType, MaxRetries: 0,
+			BackoffFunc: linearBackoff}
 	case resp.StatusCode >= 500:
 		return &RetryableError{Category: "ServerError", Message: errType, MaxRetries: 3,
 			BackoffFunc: linearBackoff}

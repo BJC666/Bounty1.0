@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"bounty/internal/auth"
 	"bounty/internal/channel"
 )
 
@@ -52,7 +53,7 @@ func (h *HTTPAPIChannel) Start(ctx context.Context) error {
 			UserID   string            `json:"user_id"`
 			Metadata map[string]string `json:"metadata,omitempty"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
@@ -79,11 +80,20 @@ func (h *HTTPAPIChannel) Start(ctx context.Context) error {
 		})
 	})
 
-	h.server = &http.Server{Addr: fmt.Sprintf(":%d", h.port), Handler: mux}
+	h.server = &http.Server{
+		// Bind to loopback by default — this channel drives the agent.
+		Addr:              fmt.Sprintf("127.0.0.1:%d", h.port),
+		Handler:           auth.Middleware(mux),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 	h.active = true
 
 	go func() {
-		log.Printf("[httpapi] Listening on :%d", h.port)
+		log.Printf("[httpapi] Listening on 127.0.0.1:%d", h.port)
 		if err := h.server.ListenAndServe(); err != http.ErrServerClosed {
 			log.Printf("[httpapi] server error: %v", err)
 		}

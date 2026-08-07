@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"time"
 
+	"bounty/internal/devet"
 	"bounty/internal/tool"
 )
 
@@ -32,11 +33,16 @@ func RegisterAll(reg *tool.Registry, opts ToolOptions) {
 	reg.Add(&CodeIndexTool{})
 	reg.Add(&RememberTool{ProjectRoot: opts.ProjectRoot})
 	reg.Add(&BrowserTool{})
+}
 
-	// DeVET integration tools (call DeVET REST API at localhost:8765)
-	reg.Add(&DeVETHealthTool{})
-	reg.Add(&DeVETBuildScenarioTool{})
-	reg.Add(&DeVETVerifyChainTool{})
-	reg.Add(&DeVETListAttacksTool{})
-	reg.Add(&DeVETSimulateAttackTool{})
+// RegisterDeVET registers all 5 DeVET tools wired to the given backend.
+// Safe to call even if backend is nil — it will be a no-op.
+func RegisterDeVET(reg *tool.Registry, backend *devet.Backend) {
+	if backend == nil {
+		return
+	}
+	dt := NewDeVETTools(backend)
+	for _, t := range dt.All() {
+		reg.Add(t)
+	}
 }

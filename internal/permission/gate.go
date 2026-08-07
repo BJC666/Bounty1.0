@@ -34,18 +34,50 @@ const (
 // Gate implements a permission-checking gate based on the configuration and
 // the current posture.
 type Gate struct {
-	cfg     config.PermissionsConfig
-	posture Posture
-	allowed map[string]bool
+	cfg        config.PermissionsConfig
+	sandbox    config.SandboxConfig
+	posture    Posture
+	allowed    map[string]bool
+	forbidRead []string
 }
 
-// NewGate creates a Gate from a PermissionsConfig and Posture.
-func NewGate(cfg config.PermissionsConfig, posture Posture) *Gate {
-	g := &Gate{cfg: cfg, posture: posture, allowed: make(map[string]bool)}
+// NewGate creates a Gate from a PermissionsConfig, the sandbox settings
+// (whose ForbidRead patterns protect the read-side tools) and a Posture.
+func NewGate(cfg config.PermissionsConfig, sandbox config.SandboxConfig, posture Posture) *Gate {
+	g := &Gate{
+		cfg:        cfg,
+		sandbox:    sandbox,
+		posture:    posture,
+		allowed:    make(map[string]bool),
+		forbidRead: sandbox.ForbidRead,
+	}
 	for _, t := range cfg.Allow.Tools {
-		g.allowed[strings.ToLower(t)] = true
+		g.allowed[normalizeToolName(t)] = true
 	}
 	return g
+}
+
+// normalizeToolName maps human-friendly display names used in older configs
+// ("Read", "WebSearch") to the registry's snake_case tool names
+// ("read_file", "web_search"). Unknown names are lowercased unchanged.
+func normalizeToolName(name string) string {
+	switch strings.ToLower(name) {
+	case "read":
+		return "read_file"
+	case "write":
+		return "write_file"
+	case "edit":
+		return "edit_file"
+	case "websearch":
+		return "web_search"
+	case "webfetch":
+		return "web_fetch"
+	case "todowrite":
+		return "todo_write"
+	case "askuserquestion":
+		return "ask_user_question"
+	}
+	return strings.ToLower(name)
 }
 
 // Check evaluates a tool call against the permission rules and current
@@ -59,6 +91,13 @@ func (g *Gate) Check(ctx context.Context, t tool.Tool, args json.RawMessage) (De
 	}
 
 	name := strings.ToLower(t.Name())
+
+	// File read protection (ForbidRead from the sandbox config)
+	for _, path := range extractReadPaths(name, args) {
+		if g.isForbidRead(path) {
+			return Deny, fmt.Errorf("read of %s is forbidden", path)
+		}
+	}
 
 	// File write protection
 	if name == "write_file" || name == "edit_file" {
@@ -98,32 +137,100 @@ func (g *Gate) Check(ctx context.Context, t tool.Tool, args json.RawMessage) (De
 }
 
 // isForbidWrite checks whether the given path matches any forbid-write
-// pattern (both relative and absolute).
+// pattern. The path is resolved to its absolute, symlink-resolved form first
+// so that relative patterns ("Windows/*"), home-relative patterns
+// ("~/.ssh/*") and symlink aliases all match their intended targets.
 func (g *Gate) isForbidWrite(path string) bool {
+	abs, ok := absolutePath(path)
+	if !ok {
+		return false
+	}
 	for _, pattern := range g.cfg.Deny.ForbidWrite {
-		matched, _ := filepath.Match(pattern, path)
-		if matched {
-			return true
-		}
-		abs, _ := filepath.Abs(path)
-		if matched, _ := filepath.Match(pattern, abs); matched {
+		if matchesPolicy(pattern, abs) {
 			return true
 		}
 	}
 	return false
 }
 
+// isForbidRead checks whether the given path matches any forbid-read pattern
+// from the sandbox configuration.
+func (g *Gate) isForbidRead(path string) bool {
+	abs, ok := absolutePath(path)
+	if !ok {
+		return false
+	}
+	for _, pattern := range g.forbidRead {
+		if matchesPolicy(pattern, abs) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractReadPaths returns the filesystem paths referenced by a read-only
+// tool invocation. glob combines a directory and a pattern, so an absolute
+// pattern is checked as well.
+func extractReadPaths(name string, args json.RawMessage) []string {
+	var params struct {
+		FilePath string `json:"file_path"`
+		Path     string `json:"path"`
+		Pattern  string `json:"pattern"`
+	}
+	if err := json.Unmarshal(args, &params); err != nil {
+		return nil
+	}
+	var paths []string
+	switch name {
+	case "read_file":
+		if params.FilePath != "" {
+			paths = append(paths, params.FilePath)
+		}
+	case "grep", "code_index":
+		if params.Path != "" {
+			paths = append(paths, params.Path)
+		}
+	case "glob":
+		if params.Path != "" {
+			paths = append(paths, params.Path)
+		}
+		if filepath.IsAbs(params.Pattern) {
+			paths = append(paths, params.Pattern)
+		}
+	}
+	return paths
+}
+
 // matchBashPattern checks whether a command matches a pattern.
-// A trailing " *" acts as a prefix match.
+// A trailing " *" acts as a prefix match. Flag aliases are canonicalized
+// first so deny patterns written with long forms ("git push --force *")
+// also catch their short/lease variants ("git push -f", "git push
+// --force-with-lease").
 func matchBashPattern(cmd, pattern string) bool {
 	if pattern == "*" {
 		return true
 	}
+	cmd = normalizeBashArgs(cmd)
 	if strings.HasSuffix(pattern, " *") {
 		prefix := strings.TrimSuffix(pattern, " *")
 		return cmd == prefix || strings.HasPrefix(cmd, prefix+" ")
 	}
 	return cmd == pattern
+}
+
+// normalizeBashArgs canonicalizes common short flags to their long forms
+// before pattern matching.
+func normalizeBashArgs(cmd string) string {
+	fields := strings.Fields(cmd)
+	for i, f := range fields {
+		switch {
+		case f == "-f":
+			fields[i] = "--force"
+		case strings.HasPrefix(f, "--force"):
+			fields[i] = "--force"
+		}
+	}
+	return strings.Join(fields, " ")
 }
 
 // extractPath extracts a file path from tool arguments.
