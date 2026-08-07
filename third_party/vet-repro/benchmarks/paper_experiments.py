@@ -11,7 +11,8 @@ import time
 import statistics
 import json
 import sys
-sys.path.insert(0, "c:/Users/21671/Desktop/大模型论文/vet-repro")
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vet_core.aid import AID, ComponentSpec
 from vet_core.compositional import CompositeProof, ExecutionStep, CoreStepRecord, ToolCallRecord
