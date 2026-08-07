@@ -1,0 +1,36 @@
+# One-command reproduction: Bounty (Go) + DeVET (FastAPI)
+#   docker compose up --build
+# - DeVET API:  http://localhost:8765/api (Swagger at /docs)
+# - Bounty Web: http://localhost:8080
+services:
+  devet:
+    build:
+      context: third_party
+      dockerfile: devet-backend/Dockerfile
+    image: bounty-devet:local
+    ports:
+      - "8765:8765"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8765/api/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  bounty:
+    build: .
+    image: bounty:local
+    depends_on:
+      devet:
+        condition: service_healthy
+    environment:
+      BOUNTY_AUTH_TOKEN: ""
+      BOUNTY_PORT: "8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - bounty-data:/home/bounty/.local/share/bounty
+    restart: unless-stopped
+
+volumes:
+  bounty-data:

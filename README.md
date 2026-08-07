@@ -29,7 +29,25 @@ python server.py
 bounty.exe chat
 ```
 
+## 一键复现（Docker）
+
+```bash
+docker compose up --build
+```
+
+- DeVET API: http://localhost:8765/api （Swagger: http://localhost:8765/docs）
+- Bounty Web: http://localhost:8080
+
+无 Docker 时，DeVET 后端也可直接运行：
+
+```bash
+cd third_party/devet-backend
+pip install -r requirements.txt
+uvicorn server:app --host 0.0.0.0 --port 8765
+```
+
 ## Bounty 命令
+
 
 | 命令 | 用途 |
 |------|------|
