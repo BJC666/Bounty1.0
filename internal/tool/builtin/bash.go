@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"syscall"
 	"runtime"
 	"strings"
 	"time"
@@ -73,7 +74,16 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 	if shell == "sh" {
 		command = prepareCommand(command)
 	}
-	cmd := exec.CommandContext(execCtx, shell, shellFlag, command)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" && shell == "cmd" {
+		// Windows 上 os/exec 会把含引号的参数转义成 \" 形式，而 cmd.exe
+		// 不识别 \" 转义，导致带引号命令（如 python -c "..."）被截断。
+		// 用 SysProcAttr.CmdLine 原样传递命令行，绕过 os/exec 的转义。
+		cmd = exec.CommandContext(execCtx, shell)
+		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: shell + " " + shellFlag + " " + command}
+	} else {
+		cmd = exec.CommandContext(execCtx, shell, shellFlag, command)
+	}
 	if b.Sandbox != nil {
 		cmd = b.Sandbox(cmd)
 	}
