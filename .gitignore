@@ -12,3 +12,8 @@ _devet_server.log
 repro_bash/
 test_start_bat.bat
 *.bak-*
+
+# eval harness work artifacts (transcripts + built binary; never commit)
+scripts/eval/work/
+scripts/eval/bin/
+scripts/eval/_selfcheck/

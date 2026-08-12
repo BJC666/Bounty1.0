@@ -218,6 +218,8 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 			return err
 		}
 
+		a.sink.Emit(event.Event{Type: "step"})
+
 		messages := sess.Snapshot()
 		schemas := a.tools.Schemas()
 		prov := a.provider()
@@ -272,6 +274,7 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 			if ev.Usage != nil {
 				usage = ev.Usage
 				a.lastUsage.Store(usage)
+				a.sink.Emit(event.Event{Type: "usage", Usage: &event.Usage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheHit: usage.CacheHit}})
 			}
 			if ev.Done {
 				goto doneStreaming

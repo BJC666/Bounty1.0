@@ -21,9 +21,9 @@
 
 | 指标 | 定义 | 基线（待阶段 0 跑出） | 8 周目标 |
 |------|------|------|------|
-| 任务成功率 pass@1 | 自有 30 任务 Eval 一次通过率 | 待测 | 基线的 1.5–2 倍，且 ≥50% |
-| 完成效率 | 每任务平均步数 / token / 费用 | 待测 | token/任务 ↓40% |
-| 长程稳定性 | 死循环率、工具调用失败率、崩溃率 | 待测 | 死循环 <2%，工具失败 <5% |
+| 任务成功率 pass@1 | 自有 30 任务 Eval 一次通过率 | qwen3.8-max **96.7%**（A 10/10、B 9/10、C 10/10，详见 `docs/eval-baseline.md`）；deepseek-v4-pro 待有效 key 补测 | 基线的 1.5–2 倍，且 ≥50% |
+| 完成效率 | 每任务平均步数 / token / 费用 | qwen3.8-max：5.6 步 / 21,031 入 tok / 1,303 出 tok | token/任务 ↓40% |
+| 长程稳定性 | 死循环率、工具调用失败率、崩溃率 | qwen3.8-max：工具失败率 7.3%、超时 0、护栏退出 1/30 | 死循环 <2%，工具失败 <5% |
 | 信任感 | 权限拦截可解释、文件可回滚、输出可复现 | 已部分具备 | 每项有自动测试 |
 
 > 原则：**没有数字的"变好了"不成立**。每个阶段结束都要有对比数字。
@@ -115,6 +115,8 @@
 - CI 挂载 smoke：PR 每次跑 10 题（约 15–30 分钟），防止改版倒退。
 
 **验收**：`docs/eval-baseline.md` 入库；`make eval-smoke` 可用；CI 绿。
+
+**状态（2026-08-13）**：已交付——`scripts/eval/`（tasks/fixtures/solutions/runner/judge/report/selfcheck），30/30 离线自检通过；qwen3.8-max 基线 96.7% 已入库；`make eval-selfcheck/eval-smoke/eval-run/eval-judge/eval-report` 可用。deepseek-v4-pro 基线因本地 `DEEPSEEK_API_KEY` 无效暂缺，设置有效 key 后跑 `python scripts/eval/runner.py --models deepseek/deepseek-v4-pro` 即可。
 
 ### 阶段 1（第 1–2 周）：上下文工程 —— 最高杠杆
 
@@ -254,15 +256,20 @@
 | P4-3 | `cmd/bounty/main.go`（run --json）、`.github/workflows/` |
 | P4-4 | `internal/provider/provider.go`（content blocks）、三 provider 实现 |
 
-## 附录 B：Eval 任务集骨架（阶段 0 交付）
+## 附录 B：Eval 任务集（阶段 0 已交付，2026-08-13）
 
 ```
 scripts/eval/
-  tasks/            # 30 题：A 仓库理解 10 + B 多文件改动 10 + C 修 bug 10
-  fixtures/         # 三个构造仓库（Go/TS/Python），含注入 bug 的 git 标签
-  judge/            # 判定器：测试命令 + 关键点 grep + diff 检查
-  runner/           # 调用 bounty run --json，采集步数/token/费用/失败标记
-  report/           # markdown 报告 + 历史曲线 CSV
+  tasks.json        # 30 题定义：A 仓库理解 10 + B 多文件改动 10 + C 修 bug 10
+  fixtures/         # 三个构造仓库 go-todo / py-stats / ts-util（含注入 bug 与缺实现）
+  solutions/        # 每题参考解法（仅供 selfcheck）
+  config/bounty.toml
+  runner.py         # 复制 fixture -> workdir，调 bounty run --json，采集步数/token/工具失败
+  judge.py          # 判定器
+  report.py         # markdown 报告 + docs/eval/history.csv
+  selfcheck.py      # 离线自检：pristine 必失败 / solution 必通过 / golden 关键点自洽
+  work/  bin/       # 运行产物（git 忽略）
 ```
 
 **判定规则**：A 类=关键点覆盖；B 类=测试绿+禁改文件未动；C 类=测试绿+diff 行数 ≤ 预算。每题超 max_steps 或死循环标记=失败。
+**跑分**：`python scripts/eval/runner.py --models qwen/qwen3.8-max` → `python scripts/eval/judge.py --run scripts/eval/work/<run_id>` → `python scripts/eval/report.py --run scripts/eval/work/<run_id>`。

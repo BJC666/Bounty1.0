@@ -1,0 +1,30 @@
+# Eval 专用配置：runner 会把它复制到每个任务的 workdir 中
+config_version = 1
+default_model = "deepseek/deepseek-v4-pro"
+language = "zh"
+
+[[providers]]
+name = "deepseek"
+kind = "openai"
+base_url = "https://api.deepseek.com"
+models = ["deepseek-v4-pro", "deepseek-v4-flash"]
+api_key_env = "DEEPSEEK_API_KEY"
+context_window = 1000000
+
+[[providers]]
+name = "qwen"
+kind = "openai"
+base_url = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode"
+models = ["qwen3.8-max"]
+api_key_env = "QWEN_TOKENPLAN_API_KEY"
+context_window = 128000
+
+[agent]
+temperature = 0.3
+max_steps = 50
+
+[remote]
+enabled = false
+
+[sandbox]
+workspace_root = '__WORKSPACE_ROOT__'

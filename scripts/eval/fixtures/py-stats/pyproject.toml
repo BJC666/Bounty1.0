@@ -1,0 +1,7 @@
+[project]
+name = "stats"
+version = "0.1.0"
+description = "Small statistics utilities with a CLI"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

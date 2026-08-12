@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,7 +21,6 @@ import (
 	"bounty/internal/remote"
 	"bounty/internal/repair"
 	"bounty/internal/serve"
-	"strings"
 )
 
 func main() {
@@ -115,10 +116,30 @@ func listSessions(cfg *config.Config) {
 
 func runCmd() {
 	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "Usage: bounty run <prompt>\n")
+		fmt.Fprintf(os.Stderr, "Usage: bounty run <prompt> [--json] [--model provider/model] [--max-steps N]\n")
 		os.Exit(1)
 	}
 	prompt := os.Args[2]
+
+	// Optional flags (kept simple: --flag or --flag=value, after the prompt).
+	var (
+		useJSON  bool
+		model    string
+		maxSteps int
+	)
+	for _, arg := range os.Args[3:] {
+		switch {
+		case arg == "--json":
+			useJSON = true
+		case strings.HasPrefix(arg, "--model="):
+			model = strings.TrimPrefix(arg, "--model=")
+		case strings.HasPrefix(arg, "--max-steps="):
+			if n, err := strconv.Atoi(strings.TrimPrefix(arg, "--max-steps=")); err == nil && n > 0 {
+				maxSteps = n
+			}
+		}
+	}
+
 	wd, _ := os.Getwd()
 	cfg, err := repair.SafeLoad(wd)
 	if err != nil {
@@ -126,13 +147,27 @@ func runCmd() {
 		os.Exit(1)
 	}
 
-	ctrl, err := boot.Build(cfg, boot.Options{
+	opts := boot.Options{
 		MaxSteps:  cfg.Agent.MaxSteps,
-		Sink:      &consoleSink{},
+		Sink:      event.Sink(&consoleSink{}),
 		Posture:   permission.PostureAuto,
 		SessionID: fmt.Sprintf("oneshot-%d", time.Now().UnixNano()),
 		Asker:     cli.TerminalAsker{},
-	})
+	}
+	if model != "" {
+		opts.Model = model
+	}
+	if maxSteps > 0 {
+		opts.MaxSteps = maxSteps
+	}
+	if useJSON {
+		// Structured output for eval/automation: one JSON event per line,
+		// and fail closed on Ask decisions instead of reading stdin.
+		opts.Sink = newJSONSink(os.Stdout)
+		opts.Asker = nil
+	}
+
+	ctrl, err := boot.Build(cfg, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

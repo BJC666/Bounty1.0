@@ -44,6 +44,13 @@ type chatRequest struct {
 	Stream      bool              `json:"stream"`
 	Temperature float64           `json:"temperature"`
 	MaxTokens   int               `json:"max_tokens,omitempty"`
+	// StreamOptions asks OpenAI-compatible backends to include token usage in
+	// the final stream chunk (needed for eval token accounting).
+	StreamOptions *chatStreamOptions `json:"stream_options,omitempty"`
+}
+
+type chatStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type chatMessage struct {
@@ -113,12 +120,13 @@ func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tool
 	}
 
 	reqBody := chatRequest{
-		Model:       p.Model,
-		Messages:    chatMsgs,
-		Tools:       wrapTools(tools),
-		Stream:      true,
-		Temperature: opts.Temperature,
-		MaxTokens:   opts.MaxTokens,
+		Model:         p.Model,
+		Messages:      chatMsgs,
+		Tools:         wrapTools(tools),
+		Stream:        true,
+		Temperature:   opts.Temperature,
+		MaxTokens:     opts.MaxTokens,
+		StreamOptions: &chatStreamOptions{IncludeUsage: true},
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)
@@ -186,6 +194,14 @@ func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<-
 			continue
 		}
 
+		// Usage is often delivered in a final chunk with empty choices.
+		if chunk.Usage != nil {
+			ch <- provider.StreamEvent{Usage: &provider.Usage{
+				InputTokens:  chunk.Usage.PromptTokens,
+				OutputTokens: chunk.Usage.CompletionTokens,
+			}}
+		}
+
 		if len(chunk.Choices) == 0 {
 			continue
 		}
@@ -224,21 +240,14 @@ func (p *Provider) readStream(ctx context.Context, body io.ReadCloser, ch chan<-
 			}
 		}
 
-		if chunk.Usage != nil {
-			ch <- provider.StreamEvent{Usage: &provider.Usage{
-				InputTokens:  chunk.Usage.PromptTokens,
-				OutputTokens: chunk.Usage.CompletionTokens,
-			}}
-		}
-
-		if choice.FinishReason != "" {
-			ch <- provider.StreamEvent{Done: true}
-			return
-		}
 	}
 	if err := scanner.Err(); err != nil {
 		ch <- provider.StreamEvent{Err: fmt.Errorf("stream read error: %w", err)}
 	}
+	// Emit Done only after the whole stream has been consumed: OpenAI-style
+	// backends send the usage chunk after the finish_reason chunk, and the
+	// agent stops reading on Done.
+	ch <- provider.StreamEvent{Done: true}
 }
 
 // wrapTools wraps raw tool schemas in OpenAI function format.

@@ -1,0 +1,16 @@
+{
+  "name": "ts-util",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --experimental-strip-types",
+    "test:strings": "node --test --experimental-strip-types test/strings.test.ts",
+    "test:numbers": "node --test --experimental-strip-types test/numbers.test.ts",
+    "test:dates": "node --test --experimental-strip-types test/dates.test.ts",
+    "test:reg-truncate": "node --test --experimental-strip-types test/regression_truncate.test.ts",
+    "test:reg-clamp": "node --test --experimental-strip-types test/regression_clamp.test.ts",
+    "test:slugify": "node --test --experimental-strip-types test/feature_slugify.test.ts",
+    "test:median": "node --test --experimental-strip-types test/feature_median.test.ts",
+    "test:relative-time": "node --test --experimental-strip-types test/feature_relative_time.test.ts"
+  }
+}

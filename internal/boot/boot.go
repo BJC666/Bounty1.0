@@ -473,8 +473,14 @@ func buildSystemPrompt(cfg *config.Config, modelName string, docs []memory.Doc, 
 	sb.WriteString(environment.Probe().Block())
 	sb.WriteString("\n")
 
-	if cfg.Sandbox.WorkspaceRoot != "" {
-		sb.WriteString("## Workspace\n" + cfg.Sandbox.WorkspaceRoot + "\n\n")
+	workspaceRoot := cfg.Sandbox.WorkspaceRoot
+	if workspaceRoot == "" {
+		if wd, err := os.Getwd(); err == nil {
+			workspaceRoot = wd
+		}
+	}
+	if workspaceRoot != "" {
+		sb.WriteString("## Workspace\n" + workspaceRoot + "\n\n")
 	}
 	sb.WriteString("## Project Memory\n")
 	for _, doc := range docs {
