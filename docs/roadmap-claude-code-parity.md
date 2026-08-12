@@ -1,0 +1,268 @@
+# Bounty → Claude Code 高度：差距分析与实施路线图
+
+> 版本：v1.0 | 日期：2026-08-13 | 状态：待评审
+> 依据：Bounty1.0 @ 6bd87c4 逐包代码勘察 + Claude Code 2026-08 能力面
+> 配套：`docs/comparison.md`（功能清单对比）、`docs/specs/2026-07-20-bounty-agent-design.md`（系统设计）
+
+---
+
+## 0. 结论先行
+
+1. **功能面上 Bounty 已覆盖 Claude Code 约 85% 的清单**，但"高度"不由清单决定，由 5 个工程维度决定：上下文工程、执行可靠性、可测量性（Eval）、模型侧适配、体验与生态。
+2. **当前最伤体验的 5 个短板**（按杠杆排序）：压缩丢消息、记忆只写不读、编辑工具无漂移自愈、工具调用无 JSON 修复、没有 Eval 体系。
+3. **路线**：8 周、4 个阶段（Eval 基线 → 上下文工程 → 执行可靠性 → 安全生态与差异化），每个工作项带验收标准，全部可回归。
+4. **定位建议**：不与 Claude 本体硬拼模型质量，打"**DeepSeek/Qwen 底座 + Claude Code 形态 + DeVET 可验证多代理安全**"——安全验证是 Claude Code 没有的护城河。
+
+---
+
+## 1. 什么才叫"达到 Claude Code 的高度"
+
+### 1.1 四个可测量指标
+
+| 指标 | 定义 | 基线（待阶段 0 跑出） | 8 周目标 |
+|------|------|------|------|
+| 任务成功率 pass@1 | 自有 30 任务 Eval 一次通过率 | 待测 | 基线的 1.5–2 倍，且 ≥50% |
+| 完成效率 | 每任务平均步数 / token / 费用 | 待测 | token/任务 ↓40% |
+| 长程稳定性 | 死循环率、工具调用失败率、崩溃率 | 待测 | 死循环 <2%，工具失败 <5% |
+| 信任感 | 权限拦截可解释、文件可回滚、输出可复现 | 已部分具备 | 每项有自动测试 |
+
+> 原则：**没有数字的"变好了"不成立**。每个阶段结束都要有对比数字。
+
+### 1.2 为什么功能清单比不出高度
+
+`docs/comparison.md` 的对照表把功能项打勾，但用户体验来自细节：
+
+- Claude Code 的 `apply_patch` 在文件被外部改动后仍能靠上下文锚点命中；Bounty 的 `edit_file` 只做精确唯一匹配，一次失败就整轮浪费。
+- Claude Code 的压缩是**模型生成的摘要**，保留"改了什么、为什么"；Bounty 的压缩是**直接丢消息**并插入一行假摘要文本。
+- Claude Code 背后有内部 Eval 体系保证每次改版不倒退；Bounty 目前只有 97 个单元测试，没有任何端到端任务回归。
+- 清单上两者都"有 Todo"，但 Claude Code 的 todo 有宿主状态、UI 展示、驱动多轮执行；Bounty 的 `todo_write` 无状态、不入上下文。
+
+所以本路线图只列"能改变测量指标的工程"，不再重复清单。
+
+---
+
+## 2. 现状盘点（2026-08-13 逐包勘察）
+
+### 2.1 已经达标的（保持，不返工）
+
+- **Agent 循环**（`internal/agent/agent.go`）：流式 reasoning/text/tool-call 增量合并、只读工具并行、8 类错误分类重试+退避、storm 信号与断轮检测、检查点挂钩。
+- **子代理**（`internal/agent/task.go`、`fleet.go`）：`task`/`read_only_task`/`fleet` 三形态，子代理隔离上下文、剥离递归委托与作业控制工具、深度限制、fleet 2–64 并行+写路径信号量。
+- **安全面**（`internal/permission`、`guardian`、`sandbox`、`secrets`、`memory/leak.go`）：4 姿态权限门、危险命令拦截、API Key 剥离与轮转、CoT 泄露正则脱敏、记忆注入扫描（`memory/injection.go`）——这块是超过多数开源代理的。
+- **扩展面**（`internal/hook`、`mcp`、`skill`、`plugin`、`channel`）：9 事件 Hooks（与 Claude Code 对齐）、MCP stdio 客户端、技能 frontmatter+索引+Curator 生命周期、TOML 插件、Telegram/Webhook/Terminal/HTTP 5 通道。
+- **工程面**：4 Provider（Anthropic 原生/OpenAI 兼容/OpenAI 原生/Ollama）、PrefixShape 缓存命中诊断、SQLite+FTS5、会话 resume、Docker 沙箱可选、Wails 桌面 + Web 控制台、CI。
+- **差异化**：DeVET 委托链验证（7 项递归检查、8 类攻击检测、归因）。
+
+### 2.2 十二个关键短板（按杠杆排序，每条=一个工作项）
+
+| # | 短板 | 代码证据 | 影响 |
+|---|------|----------|------|
+| S1 | 压缩=丢消息，非摘要 | `internal/agent/compact.go` 插入占位文本 `[Earlier conversation has been summarized...]` 但从未调用模型摘要；且 `MaxContext: 200000` 硬编码，不读 provider 的 `context_window`（qwen=128000 会溢出） | 长任务中途失忆、上下文成本失控，是最伤体验的一项 |
+| S2 | 记忆只写不读 | `internal/tool/builtin/remember.go` 写入 `RememberStore`，但 `internal/boot/boot.go` 的 `buildSystemPrompt` 只注入 BOUNTY.md/AGENTS.md 静态文档，无记忆检索工具、无注入 | "记住的偏好"下一会话就消失，自改进闭环断裂 |
+| S3 | 后台反思不回灌 | `agent.go` Run 循环里 reviewer 结果仅 `notification` 事件，不进会话、不触发 remember | 学习系统只输出日志，不产生任何行为改变 |
+| S4 | 无 Repo Map | `internal/tool/builtin/code_index.go` 是按需 regex 符号索引，不自动注入；Claude Code 每轮注入轻量仓库地图 | 大仓库导航靠反复 grep/read，步数与 token 翻倍 |
+| S5 | 编辑无漂移自愈 | `internal/tool/builtin/edit_file.go`：`old_string` 必须精确且唯一，失败只报错，不返回文件附近内容 | 一次外部改动即整轮浪费，多文件重构极易卡死 |
+| S6 | 工具调用无修复 | `docs/comparison.md` 自认 ❌"工具调用修复"；Provider 无 `tool_choice` 强制、无 JSON 修复器 | DeepSeek/Qwen 输出截断或坏 JSON 时直接失败，这是国产模型的常见失败模式 |
+| S7 | MCP 半套 | `internal/mcp/client.go` 明文写着 `HTTP transport not yet implemented`；无 resources/prompts、无项目/用户级配置、无 OAuth；所有 MCP 工具 `ReadOnly()=false` | 接不了远程 MCP server，权限粒度粗 |
+| S8 | 沙箱无强制 | `internal/sandbox/confine.go` 注释 `Phase 1: set working directory + strip API keys`；Windows 无 Docker 时进程完全无隔离 | "安全"叙事与实际防护之间的最大落差 |
+| S9 | Todo 无状态 | `internal/tool/builtin/todo_write.go` 只回显文本，无宿主状态、不入上下文 | 无法支撑多步计划执行与进度展示 |
+| S10 | 无多模态 | `internal/provider/provider.go` 的 `Message` 只有 `Content string` | 无法读截图/设计稿，排障与前端任务受限 |
+| S11 | 无 Eval 体系 | 仓库只有 97 个单测（22 文件），无端到端任务集、无回归曲线 | 任何"优化"无法验证，改版倒退无法发现 |
+| S12 | TUI/命令面薄 | `internal/cli/tui.go` 17KB，无 slash 命令、无 diff 彩色、无工具面板 | 终端体验与 Claude Code 差距最直观 |
+
+---
+
+## 3. 差距矩阵（影响 × 难度 × 阶段）
+
+| ID | 工作项 | 影响 | 难度 | 阶段 |
+|----|--------|------|------|------|
+| S11 | Eval 平台与基线 | ★★★★★ | 中 | 0 |
+| S1 | 真摘要压缩 + context_window 读取 | ★★★★★ | 中 | 1 |
+| S2 | 记忆闭环（检索+注入） | ★★★★ | 低 | 1 |
+| S4 | Repo Map 自动注入 | ★★★★ | 中 | 1 |
+| S5 | 锚点补丁 + 漂移自愈 | ★★★★★ | 中 | 2 |
+| S6 | 工具调用 JSON 修复 + tool_choice | ★★★★ | 低 | 2 |
+| S9 | Todo 宿主状态 + 计划契约 | ★★★ | 低 | 2 |
+| S3 | 后台反思 → remember → 注入闭环 | ★★★ | 低 | 2 |
+| S7 | MCP 补全（SSE/resources/作用域/权限标注） | ★★★ | 高 | 3 |
+| S8 | Windows Job Object 沙箱 | ★★★ | 高 | 3 |
+| S12a | TUI 打磨 + slash 命令 | ★★★ | 中 | 3 |
+| S12b | 子代理角色化+上下文注入+摘要 | ★★★ | 中 | 3 |
+| S10 | 多模态输入 | ★★ | 中 | 4 |
+| — | 检查点升级为 git 影子仓库 | ★★★ | 中 | 3 |
+| — | 内置技能 20 个 + 技能安全审计 | ★★ | 低 | 4 |
+| — | DeVET 全链路接入 task/fleet | ★★★★(差异化) | 中 | 4 |
+| — | 后台长命令 / run --json SDK / CI 示例 | ★★ | 低 | 4 |
+
+---
+
+## 4. 分阶段路线图（8 周）
+
+> 工时按单人全职估算；每项验收=可以跑的命令/可以读到的产物。执行顺序依赖图中阶段 0 先行。
+
+### 阶段 0（第 1 周）：Eval 平台与基线 —— "先能测，再谈变好"
+
+**目标**：有一个 30 任务端到端测试集 + 一键跑分脚本 + 基线报告。
+
+**任务集设计（30 题，3 类 × 10 题）**
+- A 仓库理解：在临时 fixture 仓库（Go/TS/Python 各一，代码不经公开训练集污染的构造仓库）提问"XX 在哪里实现 / 依赖哪些模块 / 数据流是什么"。判定：答案包含 golden 关键点（脚本 grep 关键符号）。
+- B 多文件改动：跨文件加功能（新增路由、加字段贯穿三层等）。判定：`go test`/`pytest`/`tsc` 全绿 + diff 不触碰禁改文件。
+- C 修 bug：注入 10 个已知 bug（越界/竞态/逻辑反转）。判定：测试通过 + diff 最小（行数上限）。
+- 每题限额 max_steps=50，记录：pass/fail、步数、token、费用、工具失败次数、死循环标记。
+
+**技术要点**
+- 判定器脚本化：测试命令 + 关键点检查 + diff 检查，杜绝人工打分偏差。
+- 每模型一套基线：qwen3.8-max、deepseek-v4-pro 各跑 30 题，产出 `docs/eval-baseline.md`。
+- CI 挂载 smoke：PR 每次跑 10 题（约 15–30 分钟），防止改版倒退。
+
+**验收**：`docs/eval-baseline.md` 入库；`make eval-smoke` 可用；CI 绿。
+
+### 阶段 1（第 1–2 周）：上下文工程 —— 最高杠杆
+
+**P1-1 真摘要压缩（S1）**
+- 现状：`compact.go` 直接丢消息。
+- 目标：达到阈值时**用同/低档模型生成结构化摘要**（任务目标、已做决策、关键文件改动、未完成事项、错误教训），然后 `system + 摘要 + 尾部 N 条` 重建会话；摘要复用 `PreCompact` hook 通知（已有）。
+- 细节：`MaxContext` 从 provider `ContextWindow` 读取；摘要本身计入下一轮缓存形状（`PrefixShape` 已有）；配 golden 测试（给定对话序列，断言摘要含关键事实、重建后不丢 todo 状态）。
+- 验收：10 个长会话（200 轮模拟）压缩后，任务关键信息保留率 100%（单测断言）；token 环比下降。
+
+**P1-2 记忆闭环（S2+S3）**
+- 现状：remember 只写不读；后台反思只发通知。
+- 目标：新增 `memory_search` 只读工具（FTS5 检索 remember 库）；`buildSystemPrompt` 启动时注入 Top-N（按最近使用/相关性）；后台反思结果生成"建议记忆条目"并自动落库（低风险条目）或提示用户（高风险条目）。
+- 验收：跨会话测试——会话 A 记住偏好 → 会话 B 提问，断言回答用了记忆（Eval 加 3 道记忆题）。
+
+**P1-3 Repo Map（S4）**
+- 目标：启动+文件变更时增量索引（复用 `code_index.go` 正则，加文件树与依赖边），每轮在系统提示后注入 ≤3000 token 的仓库概览；变更即失效重建。
+- 验收：Eval A 类（仓库理解）步数下降 ≥30%（对照阶段 0 基线）。
+
+**P1-4 工具结果预算（配合 S1）**
+- 现状：`maxToolOut` 32KB 固定截断，无定位提示。
+- 目标：分工具预算——read_file 默认 2000 行上限+offset/limit 行号提示；grep 匹配上限 300 条并提示收窄；bash 输出保留头尾各 15KB；截断信息写清"共多少、如何继续读"。
+- 验收：Eval 平均 token/任务下降 ≥20%，且 pass@1 不降。
+
+**P1-5 Todo 宿主状态与计划契约（S9）**
+- 目标：`todo_write` 落 SQLite；plan 姿态下系统提示强制"先输出结构化计划+todo，再动手"；每轮把当前 todo 摘要（≤10 行）注入 system 尾部；完成态变化通知 UI。
+- 验收：plan 姿态 Eval 中多步任务的步数下降、完成率上升；todo 状态在 UI 可见。
+
+### 阶段 2（第 3–4 周）：执行可靠性 —— 决定"能不能把活干完"
+
+**P2-1 锚点补丁（S5）**
+- 目标：`edit_file` 升级——`old_string` + 可选 `context_lines`（前后各 N 行锚点）；锚点命中但主体漂移时做空白归一化比对；仍失败时**返回目标文件附近 40 行**让模型自愈重试；`write_file` 覆盖已有文件时要求显式 `overwrite:true`。
+- 验收：20 个漂移用例（文件被外部改动后重试）成功率 ≥95%；Eval B 类 pass@1 提升 ≥15%。
+
+**P2-2 工具调用修复（S6）**
+- 目标：Provider 层加 `tool_choice` 强制；流式收完后校验 JSON，坏 JSON 走修复器（补尾括号/去尾逗号/修引号，借鉴 `repro/` 里 JSON 修复先例）；修复失败则把"原始输出+解析错误"回喂模型一次；schema 收紧（enum、maxLength、明确 required）。
+- 验收：坏 JSON 注入测试 20 例修复成功率 ≥80%；DeepSeek/Qwen Eval 工具失败率 <5%。
+
+**P2-3 错误反馈整形**
+- 目标：工具错误统一返回"错误类型 + 原因 + 建议重试参数"三行格式（复用 8 类错误分类器），替换裸 error 字符串。
+- 验收：Eval 中"首轮失败后自愈"比例 ≥60%（当前无此统计，先在 Eval 平台加指标）。
+
+**P2-4 Windows 命令体验**
+- 现状：`bash.go` 已做 sh→cmd 回退、GBK 解码、路径转换（此前演示中的三连错已修）。
+- 目标：未知命令时返回候选提示（`pwd`→`cd`，`ls`→`dir`）；命令预检白名单；验证 `wait/bash_output/kill_shell` 在 cmd 下可用；中文路径回归测试固定。
+- 验收：Windows 平台 30 条常用命令测试全绿。
+
+### 阶段 3（第 5–6 周）：安全与生态
+
+**P3-1 MCP 补全（S7）**
+- 目标：SSE/HTTP transport；resources/prompts 暴露为只读工具/上下文块；项目级 `.bounty/mcp.json` + 用户级 `bounty-data/mcp.json` 配置；server 级权限标注（信任 server 的工具透传 `ReadOnly` 与审批策略）。
+- 验收：连 3 个真实 MCP server（stdio×2 + SSE×1），Eval 增加 2 道 MCP 任务。
+
+**P3-2 Windows Job Object 沙箱（S8）**
+- 目标：bash 子进程挂 Job Object——限定可写目录（workspace + 白名单）、禁出站网络（可选开关）、子进程不可逃逸；Docker 可用时仍走容器。与 guardian 联动：危险命令在沙箱内也拦截。
+- 验收：三类攻击用例（写越界路径/读敏感文件/外联）全部被隔离，`sandbox_test.go` 全绿；安全报告更新。
+
+**P3-3 检查点升级为 git 影子仓库**
+- 现状：`internal/checkpoint` 文件快照，只覆盖声明了写路径的工具。
+- 目标：会话开始即建影子 git 仓库自动提交工作区；每条用户消息一个 checkpoint 标签；支持"回滚到消息 N"（文件层面）。
+- 验收：乱改 50 个文件后一键回滚，diff 为空。
+
+**P3-4 子代理增强**
+- 目标：`task` 增加 `explore`/`general` 角色 prompt（explore 只读+报告结构）；父代理把"任务相关的最近上下文片段"注入子代理（≤2KB）；子代理返回结构化摘要（结论/证据/文件清单）而非原始末条全文；`model` 参数生效（子代理可换便宜模型）。
+- 验收：Eval 加 5 道"必须用子代理"任务，pass@1 ≥60%；子代理输出 token 下降 50%。
+
+**P3-5 TUI 打磨 + Slash 命令（S12a）**
+- 目标：bubbletea 上做键盘导航（历史/滚动）、工具调用折叠面板、diff 彩色（edit 前后对照）、权限弹窗选择；slash 命令首批：`/model`、`/compact`、`/todo`、`/export`、`/skills`、`/status`。
+- 验收：录屏对比清单（导航/折叠/diff 三场景）逐项打勾。
+
+### 阶段 4（第 7–8 周）：差异化与口碑
+
+**P4-1 DeVET 全链路接入（核心差异化）**
+- 目标：`task`/`fleet` 每个子代理的结果自动过 DeVET 验签；攻击注入场景自动归因；web 控制台新增"验证链可视化"面板。
+- 验收：Eval 加 6 道 DeVET 攻防题（8 类攻击抽样），检测率 100% 且归因正确；`competition/` 文档同步更新。
+
+**P4-2 内置技能与学习闭环**
+- 目标：内置 20 个高质量技能（git/代码审查/测试修复/文档生成/翻译等）；`background_review` 的建议自动走 `remember`；技能安全审计（AST/危险模式扫描，补齐 comparison.md 的 ❌）。
+- 验收：技能索引 20 条；审计器对含危险命令的技能文件报出并拒绝加载。
+
+**P4-3 无头与 CI 形态**
+- 目标：`run --json` 输出规范化事件流（已有 event 包）；一个 GitHub Action 示例（PR 自动 code review + 跑测试）；后台长命令（bash 超 60s 自动转后台，`bash_output` 轮询）。
+- 验收：示例 Action 在仓库 PR 上真实跑通一次。
+
+**P4-4 多模态输入（S10）**
+- 目标：`provider.Message` 升级 content blocks（text+image base64），三 provider 各自映射；TUI 支持粘贴图片路径。
+- 验收：截图报错 Eval 3 题通过。
+
+---
+
+## 5. 质量护栏（长期机制）
+
+- **TDD**：每个 P 项先写测试后实现（延续 `_test.go` 先例）。
+- **CI 门禁**：`go vet` + `gofmt -l` + `go test ./...` + Eval smoke 10 题。
+- **性能声明可复现**：延续 `docs/benchmarks-2026-08-07.md` 的做法，新数字必须附命令与预期输出。
+- **Eval 周报**：每周全量 30 题 × 各模型，回归曲线入 `docs/eval/`，倒退即拦截发布。
+- **安全红线不变**：权限门/沙箱/泄露扫描改动必须过 `sandbox_test`、`gate_test`、`leak_test`；禁止绕过批准默认放行。
+- **上下文纪律**：新功能不得绕过 token 预算与缓存形状追踪。
+
+---
+
+## 6. 定位与量化目标
+
+- **8 周量化目标**：Eval pass@1 达基线 1.5–2 倍且 ≥50%；token/任务 ↓40%；死循环率 <2%；工具调用失败率 <5%；DeVET 攻防检测率保持 100%。
+- **定位语**："DeepSeek/Qwen 底座 + Claude Code 形态 + DeVET 可验证多代理安全"。
+- **答辩/论文三证据链**：①Eval 曲线（工程能力真实增长）②DeVET 归因（独有安全能力）③沙箱/权限测试（防护真实性）。
+
+## 7. 风险与依赖
+
+| 风险 | 影响 | 对策 |
+|------|------|------|
+| DeepSeek/Qwen 工具调用波动 | S6/P2-2 效果打折 | JSON 修复+重试兜底；Eval 按模型分赛道记录 |
+| token-plan 政策/限流 | Eval 跑分成本 | 30 题 × 2 模型预留预算；优先跑便宜模型 |
+| 单人时间不足 | 阶段滑移 | 按阶段顺序砍 P3-5/P4-4 等低杠杆项，不砍阶段 0/1 |
+| Windows 生态差异 | 部分 Claude Code 能力无法对齐（如 macOS seatbelt） | 用 Job Object/Docker 等价替代，文档说明差异 |
+| 公开仓库泄露风险 | 路线图含内部策略 | 本文件不含任何密钥/路径；发布前复查 |
+
+---
+
+## 附录 A：工作项速查（ID → 文件落点）
+
+| ID | 主要改动文件 |
+|----|--------------|
+| P1-1 | `internal/agent/compact.go`（真摘要）、`internal/boot/boot.go`（ContextWindow 传递） |
+| P1-2 | `internal/memory/`（检索）、`internal/tool/builtin/remember.go`、`internal/boot/boot.go`（注入） |
+| P1-3 | `internal/tool/builtin/code_index.go`（索引复用）、`internal/boot/boot.go`（每轮注入） |
+| P1-4 | `internal/agent/agent.go`（分工具预算）、各 builtin 工具 |
+| P1-5 | `internal/tool/builtin/todo_write.go`（落库）、`internal/store/sqlite.go` |
+| P2-1 | `internal/tool/builtin/edit_file.go`、`write_file.go` |
+| P2-2 | `internal/provider/`（tool_choice、JSON 修复器）、`internal/agent/agent.go`（回喂重试） |
+| P2-4 | `internal/tool/builtin/bash.go` |
+| P3-1 | `internal/mcp/client.go`（SSE）、`internal/config/`（作用域配置） |
+| P3-2 | `internal/sandbox/`（Job Object）、`internal/guardian/` |
+| P3-3 | `internal/checkpoint/`（git 影子仓库） |
+| P3-4 | `internal/agent/task.go`（角色/上下文/摘要） |
+| P3-5 | `internal/cli/tui.go`、`cmd/bounty/main.go`（slash 命令） |
+| P4-1 | `internal/devet/`、`internal/agent/task.go`（自动验证）、`internal/serve/`（可视化） |
+| P4-3 | `cmd/bounty/main.go`（run --json）、`.github/workflows/` |
+| P4-4 | `internal/provider/provider.go`（content blocks）、三 provider 实现 |
+
+## 附录 B：Eval 任务集骨架（阶段 0 交付）
+
+```
+scripts/eval/
+  tasks/            # 30 题：A 仓库理解 10 + B 多文件改动 10 + C 修 bug 10
+  fixtures/         # 三个构造仓库（Go/TS/Python），含注入 bug 的 git 标签
+  judge/            # 判定器：测试命令 + 关键点 grep + diff 检查
+  runner/           # 调用 bounty run --json，采集步数/token/费用/失败标记
+  report/           # markdown 报告 + 历史曲线 CSV
+```
+
+**判定规则**：A 类=关键点覆盖；B 类=测试绿+禁改文件未动；C 类=测试绿+diff 行数 ≤ 预算。每题超 max_steps 或死循环标记=失败。
