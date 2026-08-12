@@ -4,3 +4,11 @@ bounty.exe~
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# local build artifacts & runtime junk (may embed local paths; never commit)
+bounty.exe
+bounty.exe.*
+_devet_server.log
+repro_bash/
+test_start_bat.bat
+*.bak-*

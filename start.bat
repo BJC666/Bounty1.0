@@ -20,7 +20,7 @@ if "%DEEPSEEK_API_KEY%"=="" (
 )
 
 echo [1/2] Starting DeVET backend...
-start "DeVET" cmd /c "cd /d D:\智能体开发\全智赛AI+软件\DeVET\backend && python server.py"
+start "DeVET" cmd /c "cd /d %~dp0..\DeVET\backend && python server.py"
 echo   Waiting for DeVET backend (3s)...
 timeout /t 3 >nul
 

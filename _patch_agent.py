@@ -1,5 +1,5 @@
 import os
-os.chdir('d:/智能体开发/Bounty')
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 path = 'internal/agent/agent.go'
 with open(path, 'r') as f:
     content = f.read()

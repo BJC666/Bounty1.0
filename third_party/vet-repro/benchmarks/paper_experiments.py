@@ -488,7 +488,7 @@ def main():
     all_results["experiment_4"] = experiment_4_policy_strictness()
 
     # 保存结果
-    output_path = "c:/Users/21671/Desktop/大模型论文/vet-repro/results/paper_experiments.json"
+    output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results", "paper_experiments.json")
 
     # 转换非可序列化对象
     serializable = {}

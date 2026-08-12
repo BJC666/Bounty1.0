@@ -212,13 +212,13 @@ func (r *Registry) All() []Tool {
 - [ ] **Step 3: 验证编译通过**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/event ./internal/tool
+cd ~/Bounty && go build ./internal/event ./internal/tool
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add event types and tool interface with registry"
+cd ~/Bounty && git add -A && git commit -m "feat: add event types and tool interface with registry"
 ```
 
 ---
@@ -576,13 +576,13 @@ func TestMain(m *testing.M) {
 - [ ] **Step 4: 运行测试**
 
 ```bash
-cd d:/智能体开发/Bounty && go test ./internal/store/ -v
+cd ~/Bounty && go test ./internal/store/ -v
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add SQLite store with FTS5 search"
+cd ~/Bounty && git add -A && git commit -m "feat: add SQLite store with FTS5 search"
 ```
 
 ---
@@ -889,13 +889,13 @@ func LoadAll(providers []struct{ Name, APIKeyEnv string }) (map[string]string, e
 - [ ] **Step 4: 验证编译**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/config ./internal/secrets
+cd ~/Bounty && go build ./internal/config ./internal/secrets
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add TOML config system with secrets from env"
+cd ~/Bounty && git add -A && git commit -m "feat: add TOML config system with secrets from env"
 ```
 
 ---
@@ -1354,13 +1354,13 @@ func SortKeys(raw json.RawMessage) json.RawMessage {
 - [ ] **Step 6: 验证编译**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/provider/...
+cd ~/Bounty && go build ./internal/provider/...
 ```
 
 - [ ] **Step 7: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add Provider interface with DeepSeek (OpenAI-compat) and error classifier"
+cd ~/Bounty && git add -A && git commit -m "feat: add Provider interface with DeepSeek (OpenAI-compat) and error classifier"
 ```
 
 ---
@@ -1576,13 +1576,13 @@ type ToolOptions struct {
 - [ ] **Step 5: 验证编译**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/tool/...
+cd ~/Bounty && go build ./internal/tool/...
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add 9 builtin tools (bash, read/write/edit file, grep, glob, todo, web)"
+cd ~/Bounty && git add -A && git commit -m "feat: add 9 builtin tools (bash, read/write/edit file, grep, glob, todo, web)"
 ```
 
 ---
@@ -2044,13 +2044,13 @@ func (a *Agent) compact(ctx context.Context, sess *Session) {
 - [ ] **Step 4: 验证编译**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/agent/...
+cd ~/Bounty && go build ./internal/agent/...
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add Agent engine with session, tool execution, guardrails, and compaction"
+cd ~/Bounty && git add -A && git commit -m "feat: add Agent engine with session, tool execution, guardrails, and compaction"
 ```
 
 ---
@@ -2270,13 +2270,13 @@ func Wrap(cmd *exec.Cmd, workspaceRoot string) *exec.Cmd {
 - [ ] **Step 4: 验证编译**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/permission/... ./internal/sandbox/...
+cd ~/Bounty && go build ./internal/permission/... ./internal/sandbox/...
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add permission gate with bash pattern matching and sandbox confinement"
+cd ~/Bounty && git add -A && git commit -m "feat: add permission gate with bash pattern matching and sandbox confinement"
 ```
 
 ---
@@ -2443,13 +2443,13 @@ func runShellHook(ctx context.Context, cfg HookConfig, payload Payload) (*Result
 - [ ] **Step 3: 验证编译**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/hook/...
+cd ~/Bounty && go build ./internal/hook/...
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add hook system with 9 events and shell command runner"
+cd ~/Bounty && git add -A && git commit -m "feat: add hook system with 9 events and shell command runner"
 ```
 
 ---
@@ -2608,13 +2608,13 @@ func Discover(paths []string) []string {
 - [ ] **Step 3: 验证编译**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/skill/... ./internal/plugin/...
+cd ~/Bounty && go build ./internal/skill/... ./internal/plugin/...
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add skill discovery with index and plugin manifest loading"
+cd ~/Bounty && git add -A && git commit -m "feat: add skill discovery with index and plugin manifest loading"
 ```
 
 ---
@@ -2950,13 +2950,13 @@ func (a hookRunnerAdapter) PostToolUse(ctx context.Context, name string, resultS
 - [ ] **Step 3: 验证编译**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/boot/... ./internal/control/...
+cd ~/Bounty && go build ./internal/boot/... ./internal/control/...
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add Controller and Boot assembly layer"
+cd ~/Bounty && git add -A && git commit -m "feat: add Controller and Boot assembly layer"
 ```
 
 ---
@@ -3119,13 +3119,13 @@ max_steps = 50
 - [ ] **Step 3: 初始化 git + 验证构建**
 
 ```bash
-cd d:/智能体开发/Bounty && git init && go mod tidy && go build ./cmd/bounty/
+cd ~/Bounty && git init && go mod tidy && go build ./cmd/bounty/
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && git add -A && git commit -m "feat: add CLI entry point with chat mode and example config"
+cd ~/Bounty && git add -A && git commit -m "feat: add CLI entry point with chat mode and example config"
 ```
 
 ---
@@ -3208,7 +3208,7 @@ func readMemoryFile(path string) (string, bool) {
 - [ ] **Step 2: 验证编译 + Commit**
 
 ```bash
-cd d:/智能体开发/Bounty && go build ./internal/memory/... && git add -A && git commit -m "feat: add hierarchical memory loader"
+cd ~/Bounty && go build ./internal/memory/... && git add -A && git commit -m "feat: add hierarchical memory loader"
 ```
 
 ---
