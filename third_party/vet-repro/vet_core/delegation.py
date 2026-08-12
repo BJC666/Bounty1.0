@@ -101,10 +101,10 @@ class DelegationGrant:
         expected = self.compute_hash()
         if self.grant_hash != expected:
             return False, (
-                f"Grant hash mismatch: stored={self.grant_hash[:20]}..., "
-                f"computed={expected[:20]}..."
+                f"授权哈希不匹配：存储值={self.grant_hash[:20]}...，"
+                f"重算值={expected[:20]}..."
             )
-        return True, "Grant integrity verified"
+        return True, "授权完整性验证通过"
 
 
 @dataclass

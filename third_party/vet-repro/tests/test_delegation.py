@@ -478,7 +478,7 @@ class TestDelegationVerifier:
         result = verifier.verify_chain(chain, {})
 
         assert result.authentic is False
-        assert "Root AID hash mismatch" in result.error
+        assert "根身份哈希不匹配" in result.error
         assert result.blame_path == ["root"]
 
     def test_verify_rejects_tampered_grant(self):

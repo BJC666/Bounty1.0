@@ -47,7 +47,7 @@ class CompositionalVerifier:
 
     def verify(self, composite: CompositeProof, claimed_outputs: list = None) -> tuple:
         if composite.aid_hash != self.aid.agent_hash:
-            return False, f"AID mismatch: proof={composite.aid_hash}, verifier={self.aid.agent_hash}"
+            return False, f"AID 身份不匹配：证明={composite.aid_hash}，验证方={self.aid.agent_hash}"
         if not composite.steps:
-            return False, "Empty composite proof"
-        return True, f"All {len(composite.all_sub_proofs())} sub-proofs verified"
+            return False, "组合证明为空"
+        return True, f"全部 {len(composite.all_sub_proofs())} 个子证明验证通过"

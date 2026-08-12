@@ -49,14 +49,14 @@ class ExecutionChain:
             return True, "Empty chain"
         for i, step in enumerate(self.steps):
             if step.step_index != i:
-                return False, f"Chain gap at {i}: expected index {i}, got {step.step_index}"
+                return False, f"执行链断点：第 {i} 步，期望序号 {i}，实际 {step.step_index}"
             if i == 0:
                 if step.prev_hash is not None:
-                    return False, "First step prev_hash must be None"
+                    return False, "第一步的 prev_hash 必须为空"
             else:
                 expected = self.steps[i - 1].step_hash
                 if step.prev_hash != expected:
-                    return False, f"Broken chain at step {i}"
+                    return False, f"执行链在第 {i} 步断裂"
             if step.step_hash != step.compute_hash():
-                return False, f"Step {i}: hash mismatch"
-        return True, f"Chain verified: {len(self.steps)} steps"
+                return False, f"第 {i} 步：哈希不匹配"
+        return True, f"执行链验证通过：共 {len(self.steps)} 步"
