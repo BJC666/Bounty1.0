@@ -12,8 +12,6 @@ import (
 	"bounty/internal/tool"
 )
 
-
-
 // pathHints searches for same-basename files near the requested path and
 // returns a short "did you mean" appendix, so a wrong-path read degrades into
 // a useful hint instead of a dead end (the dominant tool failure in Eval).
@@ -61,6 +59,7 @@ func pathHints(requested string) string {
 	}
 	return fmt.Sprintf(" 疑似目标文件：%s。可先 glob 确认后再读。", strings.Join(candidates, "；"))
 }
+
 // defaultReadMaxLines caps read_file output unless the caller passes an
 // explicit limit, so a huge file cannot flood the context.
 const defaultReadMaxLines = 2000
