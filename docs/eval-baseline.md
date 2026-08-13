@@ -38,6 +38,13 @@
 - **token/任务：输入 21,031 → 15,907（↓24.4%，达标 ↓20%）；输出 1,303 → 711（↓45.4%）；成本 25.4 → 17.7（↓30.3%）**。杠杆：系统提示瘦身（Tool Rules/DeVET 块）+ 14 工具描述精简 + repo map 格式压缩，每轮省 ~500 tok × 步数。
 - 结论：**P7-3 验收达标（token ↓24.4%）、P7-2 达标（失败率 3.8%）、pass@1 不降**——阶段 6 遗留的两条未达验收线至此全部闭环。口径说明：222946 起使用分列口径（工具/验证），旧行保持老口径数值不变。
 
+## P7-4 真实生态验证（2026-08-13）
+
+- **MCP 真实 server**：官方 Node reference server（filesystem/memory，stdio）+ 官方 Python SDK FastMCP（SSE）三连全通（`docs/eval/p7-4-mcp-transcript.txt`）；fixture mcp-math 升级为 FastMCP 实现后 E1/E2 重跑 PASS（run 20260813-mcp-real，工具失败率 0%）。详见 `docs/eval/p7-4-acceptance.md`。
+- **子代理摘要 token**：单测 ASCII/CJK 5.0%/8.4%，真实模型 18.2%（20,883→3,792 tok）——P3-4 达标。
+- **A 类步数**：3.3→2.4/2.5（↓27.3%/24.2%），未达 30% 线（如实记录）。
+- **TUI**：winpty 真实 TTY 录屏三场景（导航/折叠/diff），`docs/eval/p7-4-tui/transcript.log`。
+
 ## qwen 失败题分析
 
 - **B9（实现 median）**：代码产物正确（判定器产物自检=测试通过），但模型把首个版本写错目录后，
