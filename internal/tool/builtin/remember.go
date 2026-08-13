@@ -14,8 +14,8 @@ type RememberTool struct {
 	ProjectRoot string
 }
 
-func (r *RememberTool) Name() string   { return "remember" }
-func (r *RememberTool) ReadOnly() bool { return false }
+func (r *RememberTool) Name() string      { return "remember" }
+func (r *RememberTool) ReadOnly() bool    { return false }
 func (r *RememberTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (r *RememberTool) Description() string {
 	return "Save a durable fact to project memory. Use for conventions, preferences, and lessons learned."

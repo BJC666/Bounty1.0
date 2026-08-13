@@ -44,10 +44,12 @@ type devetHealthTool struct {
 	backend *devet.Backend
 }
 
-func (t *devetHealthTool) Name() string        { return "devet_health" }
-func (t *devetHealthTool) ReadOnly() bool      { return true }
-func (t *devetHealthTool) Description() string { return "Check if the DeVET verification backend is running and healthy." }
-func (t *devetHealthTool) Owner() tool.Owner   { return tool.Owner{Kind: "core", ID: "devet"} }
+func (t *devetHealthTool) Name() string   { return "devet_health" }
+func (t *devetHealthTool) ReadOnly() bool { return true }
+func (t *devetHealthTool) Description() string {
+	return "Check if the DeVET verification backend is running and healthy."
+}
+func (t *devetHealthTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "devet"} }
 
 func (t *devetHealthTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{},"required":[]}`)
@@ -71,8 +73,8 @@ type devetBuildScenarioTool struct {
 	backend *devet.Backend
 }
 
-func (t *devetBuildScenarioTool) Name() string      { return "devet_build_scenario" }
-func (t *devetBuildScenarioTool) ReadOnly() bool     { return true }
+func (t *devetBuildScenarioTool) Name() string   { return "devet_build_scenario" }
+func (t *devetBuildScenarioTool) ReadOnly() bool { return true }
 func (t *devetBuildScenarioTool) Description() string {
 	return "Build a 3-agent Trading DAO delegation chain in DeVET (StrategyAgent -> ExecutionAgentETH + ExecutionAgentBTC)."
 }
@@ -107,8 +109,8 @@ type devetVerifyChainTool struct {
 	backend *devet.Backend
 }
 
-func (t *devetVerifyChainTool) Name() string      { return "devet_verify_chain" }
-func (t *devetVerifyChainTool) ReadOnly() bool     { return true }
+func (t *devetVerifyChainTool) Name() string   { return "devet_verify_chain" }
+func (t *devetVerifyChainTool) ReadOnly() bool { return true }
 func (t *devetVerifyChainTool) Description() string {
 	return "Verify the current DeVET delegation chain. Must call devet_build_scenario first."
 }
@@ -162,8 +164,8 @@ type devetListAttacksTool struct {
 	backend *devet.Backend
 }
 
-func (t *devetListAttacksTool) Name() string      { return "devet_list_attacks" }
-func (t *devetListAttacksTool) ReadOnly() bool     { return true }
+func (t *devetListAttacksTool) Name() string   { return "devet_list_attacks" }
+func (t *devetListAttacksTool) ReadOnly() bool { return true }
 func (t *devetListAttacksTool) Description() string {
 	return "List all 8 attack types available in DeVET for security testing."
 }
@@ -204,8 +206,8 @@ type devetSimulateAttackTool struct {
 	backend *devet.Backend
 }
 
-func (t *devetSimulateAttackTool) Name() string      { return "devet_simulate_attack" }
-func (t *devetSimulateAttackTool) ReadOnly() bool     { return true }
+func (t *devetSimulateAttackTool) Name() string   { return "devet_simulate_attack" }
+func (t *devetSimulateAttackTool) ReadOnly() bool { return true }
 func (t *devetSimulateAttackTool) Description() string {
 	return "Simulate an attack on the DeVET delegation chain and verify detection. Requires attack_type ID (e.g. A1_delegation_replacement)."
 }
@@ -216,7 +218,9 @@ func (t *devetSimulateAttackTool) Schema() json.RawMessage {
 }
 
 func (t *devetSimulateAttackTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
-	var params struct{ AttackType string `json:"attack_type"` }
+	var params struct {
+		AttackType string `json:"attack_type"`
+	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return "", err
 	}
