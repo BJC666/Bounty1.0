@@ -108,7 +108,6 @@ func TestPolicyAllowsOutboundWhenNetworkOn(t *testing.T) {
 	}
 }
 
-
 // TestPolicyAllowsNulRedirect: `> nul` on Windows discards output and must
 // not be treated as an outside-workspace write (false positive seen in Eval).
 func TestPolicyAllowsNulRedirect(t *testing.T) {
@@ -122,6 +121,9 @@ func TestPolicyAllowsNulRedirect(t *testing.T) {
 	}
 	if err := p.Check("echo x >> NUL"); err != nil {
 		t.Fatalf("NUL append blocked: %v", err)
+	}
+	if err := p.Check("echo x > \\.\\nul"); err != nil {
+		t.Fatalf("\\.\\nul redirect blocked: %v", err)
 	}
 	// A real file named nul.txt outside the workspace must still be blocked.
 	if err := p.Check(`echo x > C:\Windows\nul.txt`); err == nil {

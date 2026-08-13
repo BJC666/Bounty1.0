@@ -58,8 +58,7 @@ func (p *Policy) Check(command string) error {
 		// filesystem write. Whitelisted so sandbox false-positives do not
 		// poison legitimate command idioms.
 		if strings.EqualFold(strings.Trim(target, `"`), "nul") ||
-			strings.EqualFold(strings.Trim(target, `"`), `\.
-ul`) {
+			strings.EqualFold(strings.Trim(target, `"`), `\.\nul`) {
 			continue
 		}
 		abs, ok := absolutePathLocal(target)
