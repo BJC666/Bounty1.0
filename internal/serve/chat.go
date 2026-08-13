@@ -9,6 +9,7 @@ import (
 
 	"bounty/internal/auth"
 	"bounty/internal/checkpoint"
+	"bounty/internal/devet"
 )
 
 type ChatHandler struct {
@@ -18,6 +19,9 @@ type ChatHandler struct {
 	// (P3-3). nil means checkpoints are unavailable in this deployment.
 	CheckpointListFn    func() ([]checkpoint.Info, error)
 	CheckpointRestoreFn func(msgIndex int) error
+	// DeVETStateFn returns the latest sub-agent verification snapshot for the
+	// chain-visualisation panel (P4-1). nil = DeVET unavailable.
+	DeVETStateFn func() *devet.StateSnapshot
 }
 
 // ModelSwitchRequest carries the connection parameters for a runtime model
@@ -93,9 +97,29 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/chat/api/devet/state" && r.Method == http.MethodGet {
+		h.devetStateAPI(w)
+		return
+	}
+
 	// Serve the chat SPA
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(chatHTML))
+}
+
+// devetStateAPI serves the latest DeVET chain snapshot for the web panel.
+func (h *ChatHandler) devetStateAPI(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.DeVETStateFn == nil {
+		json.NewEncoder(w).Encode(map[string]any{"status": "unavailable", "snapshot": nil})
+		return
+	}
+	snap := h.DeVETStateFn()
+	if snap == nil {
+		json.NewEncoder(w).Encode(map[string]any{"status": "empty", "snapshot": nil})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "snapshot": snap})
 }
 
 // checkpointsAPI lists the per-message checkpoints of the current session.
@@ -238,6 +262,7 @@ select { background: var(--bg); color: var(--cream); border: 1px solid var(--bor
   <div class="tab tab-chat active" onclick="switchTab('chat')">💬 Chat</div>
   <div class="tab tab-devet" onclick="switchTab('devet')">🛡️ DeVET Security</div>
   <div class="tab tab-ckpt" onclick="switchTab('ckpt')">↩️ 回滚</div>
+  <div class="tab tab-chain" onclick="switchTab('chain')">🛡️ 验证链</div>
 </div>
 <div id="panel-chat" class="panel active">
 <div id="stats">
@@ -291,6 +316,17 @@ select { background: var(--bg); color: var(--cream); border: 1px solid var(--bor
     <h3>📊 Attack Summary</h3>
     <div class="attack-grid" id="attack-grid">
     </div>
+  </div>
+</div>
+<div id="panel-chain" class="panel">
+  <div class="devet-card">
+    <h3>🛡️ DeVET 验证链可视化（P4-1）</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:8px;">每次 task / fleet 子代理完成后，其结果会被镜像为 DeVET 委托链（身份承诺 + 授权密封 + 7 项递归检查）自动验签。下方展示最近一次验证的完整链路与责任归因。</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <button onclick="refreshDevetState()" style="background:var(--gold);color:#000;border:none;border-radius:4px;padding:6px 14px;font-weight:600;cursor:pointer;font-size:13px;">🔄 刷新验证链</button>
+      <span id="devet-state-tag" style="font-size:12px;color:var(--muted);"></span>
+    </div>
+    <div id="devet-chain-panel" style="font-size:13px;"></div>
   </div>
 </div>
 <div id="panel-ckpt" class="panel">
@@ -360,6 +396,9 @@ function handleEvent(ev) {
       } else {
         addMsg('tool', '✅ done');
       }
+      break;
+    case 'devet_verify':
+      if (ev.Devet) refreshDevetState();
       break;
     case 'usage':
       if (ev.Usage) {
@@ -515,7 +554,75 @@ function switchTab(name) {
   document.querySelector('.tab-' + name).classList.add('active');
   document.getElementById('panel-' + name).classList.add('active');
   if (name === 'ckpt') refreshCheckpoints();
+  if (name === 'chain') refreshDevetState();
 }
+
+// ── DeVET Chain Visualisation (P4-1) ──
+let devetTimer = null;
+async function refreshDevetState() {
+  const el = document.getElementById('devet-chain-panel');
+  const tag = document.getElementById('devet-state-tag');
+  try {
+    const r = await fetch('/chat/api/devet/state' + tokenParam);
+    const d = await r.json();
+    renderDevetState(d);
+  } catch (err) {
+    el.innerHTML = '<span class="result-fail">❌ 获取验证链失败：' + esc(err) + '</span>';
+  }
+}
+function startDevetPolling() {
+  if (devetTimer) return;
+  devetTimer = setInterval(() => {
+    const panel = document.getElementById('panel-chain');
+    if (panel && panel.classList.contains('active')) refreshDevetState();
+  }, 5000);
+}
+function renderDevetState(d) {
+  const el = document.getElementById('devet-chain-panel');
+  const tag = document.getElementById('devet-state-tag');
+  const snap = d.snapshot;
+  if (!snap) {
+    el.innerHTML = '<p style="color:var(--muted);">暂无验证记录——向 Bounty 派一个 task / fleet 子代理任务后，这里会显示其委托链验证结果。';
+    if (d.status === 'unavailable') el.innerHTML += '<br>DeVET 后端未运行（tool 不可用）。';
+    el.innerHTML += '</p>';
+    tag.textContent = d.status === 'unavailable' ? '后端不可用' : '等待首次验证';
+    return;
+  }
+  let html = '';
+  const t = new Date(snap.time || Date.now()).toLocaleTimeString();
+  if (snap.available === false) {
+    html += '<div style="border:1px solid var(--red);border-radius:6px;padding:8px;margin-bottom:8px;">';
+    html += '<span class="result-fail">⚠️ DeVET 后端不可用</span><br>';
+    html += '<span style="color:var(--muted);">' + esc(snap.last_error || '') + '</span></div>';
+  } else {
+    const overall = snap.authentic
+      ? '<span class="result-ok">✅ 链真实有效</span>'
+      : '<span class="result-fail">❌ 检出故障：' + esc(snap.fault_type || 'unknown') + '</span>';
+    html += '<div style="border:1px solid ' + (snap.authentic ? 'var(--green)' : 'var(--red)') + ';border-radius:6px;padding:8px;margin-bottom:8px;">';
+    html += '总体：' + overall + ' · ' + t + '</div>';
+    html += '<div style="font-family:monospace;color:var(--gold);margin-bottom:6px;">' + esc(snap.host_name || 'bounty-host') + '（宿主，用户信任根）</div>';
+    (snap.agents || []).forEach((a, i) => {
+      const auth = a.authentic === true ? '<span class="result-ok">✓</span>'
+                 : a.authentic === false ? '<span class="result-fail">✗</span>'
+                 : '<span style="color:var(--muted);">?</span>';
+      html += '<div style="border:1px solid var(--border);border-left:3px solid ' + (a.authentic === false ? 'var(--red)' : 'var(--green)') + ';border-radius:6px;padding:8px;margin:6px 0;">';
+      html += '├─ ' + auth + ' <b style="color:var(--cream);">' + esc(a.name) + '</b> <span style="color:var(--muted);">[' + esc(a.role || '') + ' · ' + esc(a.model || '') + ' · ' + esc(a.endpoint || '') + ']</span><br>';
+      html += '<span style="color:var(--muted);">&nbsp;&nbsp;&nbsp;&nbsp;承诺 sha256:…' + esc((a.result_commitment || '').slice(0, 12)) + ' · 工具调用 ' + (a.tool_calls || 0) + ' 次</span>';
+      if ((a.written_files || []).length) {
+        html += '<br><span style="color:var(--muted);">&nbsp;&nbsp;&nbsp;&nbsp;写入：' + esc(a.written_files.join('、')) + '</span>';
+      }
+      if (a.fault_type) html += '<br><span class="result-fail">&nbsp;&nbsp;&nbsp;&nbsp;故障：' + esc(a.fault_type) + '</span>';
+      html += '</div>';
+    });
+    if (!snap.authentic && (snap.blame_path || []).length) {
+      html += '<div style="border:1px solid var(--red);border-radius:6px;padding:8px;margin-top:6px;"><span class="result-fail">责任归因：</span>' + esc(snap.blame_path.join(' → ')) + '</div>';
+    }
+    if (snap.error) html += '<div style="color:var(--muted);margin-top:6px;">详情：' + esc(snap.error) + '</div>';
+  }
+  el.innerHTML = html;
+  tag.textContent = '最近验证 ' + t;
+}
+startDevetPolling();
 
 // ── sendMessageText: post a message directly without using the textarea ──
 function sendMessageText(text) {

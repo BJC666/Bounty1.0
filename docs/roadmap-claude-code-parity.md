@@ -205,6 +205,7 @@
 **P4-1 DeVET 全链路接入（核心差异化）**
 - 目标：`task`/`fleet` 每个子代理的结果自动过 DeVET 验签；攻击注入场景自动归因；web 控制台新增"验证链可视化"面板。
 - 验收：Eval 加 6 道 DeVET 攻防题（8 类攻击抽样），检测率 100% 且归因正确；`competition/` 文档同步更新。
+- 状态（2026-08-13）：✅ 已交付——①DeVET 后端新增 `/chain/mirror`（Bounty 真实子代理委托镜像：每子代理一条密封 DelegationGrant + CompositeProof，结果 sha256 承诺/工具调用数/写入清单绑定，root 链 notary 承诺）+ `/chain/tamper`（替换任意委托节点证明后复验，blame_path 精确到 delegation[i]→子代理名）；verify 改为使用存储根 AID（scenario 与 mirror 两路通用）。②Bounty 侧 `devet.MirrorClient`（MirrorAndVerify/Verify/Tamper/State 快照，10s 超时）；`Agent.Options.DeVET` 挂钩——runChildAgent 完成后自动镜像验签，【DeVET 验证】节追加进子代理摘要（✅ 真实有效/❌ 检出故障+归因/⚠️ 后端不可用），后端失败绝不阻断父任务（纵深防御非硬门）；`event.DeVETEvent` 广播。③web 控制台新增「🛡️ 验证链」面板（GET /chat/api/devet/state + SSE devet_verify 实时刷新）：宿主→各子代理承诺/工具数/写入文件/逐节点 ✓✗/总体判定/归因路径。④Eval F1–F6（8 类攻击抽样：A1/A2/A4/A7/A8/A10）：judge/selfcheck/report 支持 F 类（require_tool_prefix=devet_simulate_attack，golden=DETECTED=YES+实际 fault），selfcheck 46/46，qwen3.8-max 实测 **pass@1 = 6/6（100%）**——每题 6.5–10s、0 工具错误、实际调用 devet_build_scenario+devet_simulate_attack 并正确报告 fault_type 与 blame 首节点。测试：devet mirror 4 项（happy path/tamper 归因/State 防御拷贝/503 降级）、agent devet_hook 5 项（authentic/检出伪造/后端宕/未配置禁用/task E2E 工具计数）、serve devet 端点 3 项；`go vet`+`go test ./...` 全绿。`competition/02、03` 已同步更新。诚实边界：镜像证明是**结果承诺级**验签（sha256 绑定 + 授权密封 + 7 项递归检查，与 DeVET 演示后端同口径），非 TLS notary 级网络证明；后端宕机时降级为「未验证」标注而非拒绝结果；真实子代理委派链的逐轮镜像成本未做压测（benchmark 端点已有 0.024ms 单次验证基线）。
 
 **P4-2 内置技能与学习闭环**
 - 目标：内置 20 个高质量技能（git/代码审查/测试修复/文档生成/翻译等）；`background_review` 的建议自动走 `remember`；技能安全审计（AST/危险模式扫描，补齐 comparison.md 的 ❌）。

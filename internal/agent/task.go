@@ -174,7 +174,14 @@ func runChildAgent(ctx context.Context, parent *Agent, taskPrompt string, writeP
 	}
 	// P3-4: return a structured summary (结论/证据/文件清单) instead of the
 	// raw final message, bounding the tokens the parent must consume.
-	return buildSubagentSummary(final, childSession), nil
+	summary := buildSubagentSummary(final, childSession)
+	// P4-1: mirror the completed sub-agent run into DeVET and auto-verify the
+	// delegation chain; failures are reported as an honest note, never as a
+	// hard error (verification is a defense-in-depth layer, not a gate).
+	if parent.devetVerifier != nil {
+		summary += parent.verifySubagentResult(ctx, role, model, final, childSession)
+	}
+	return summary, nil
 }
 
 // resolveChildProvider picks the child provider: the parent's provider when

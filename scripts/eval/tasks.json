@@ -743,6 +743,108 @@
       "any_of": [],
       "golden_answer": "README.md 的第一行是：# go-todo",
       "require_tool_prefix": "read_only_task"
+    },
+    {
+      "id": "F1",
+      "category": "F",
+      "fixture": "go-todo",
+      "title": "DeVET 攻防：委托替换 A1",
+      "prompt": "安全验证任务：先调用 devet_build_scenario 构建委托链，再调用 devet_simulate_attack（attack_type=A1_delegation_replacement）。根据工具返回结果回答，只输出一行，格式：DETECTED=YES 或 DETECTED=NO，然后 FAULT=<实际的 fault_type>，然后 BLAME=<blame_path 的第一个节点>。例：DETECTED=YES FAULT=grant_tampered BLAME=delegation[0]",
+      "golden_answer": "DETECTED=YES FAULT=grant_tampered BLAME=delegation[0]",
+      "critical_patterns": [
+        "DETECTED=YES",
+        "grant_tampered"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "require_tool_prefix": "devet_simulate_attack"
+    },
+    {
+      "id": "F2",
+      "category": "F",
+      "fixture": "go-todo",
+      "title": "DeVET 攻防：子结果伪造 A2",
+      "prompt": "安全验证任务：先调用 devet_build_scenario 构建委托链，再调用 devet_simulate_attack（attack_type=A2_sub_result_forgery）。根据工具返回结果回答，只输出一行：DETECTED=YES/NO FAULT=<实际 fault_type> BLAME=<blame_path 第一个节点>。例：DETECTED=YES FAULT=subagent_proof_invalid BLAME=delegation[0]",
+      "golden_answer": "DETECTED=YES FAULT=subagent_proof_invalid BLAME=delegation[0]",
+      "critical_patterns": [
+        "DETECTED=YES",
+        "subagent_proof_invalid"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "require_tool_prefix": "devet_simulate_attack"
+    },
+    {
+      "id": "F3",
+      "category": "F",
+      "fixture": "go-todo",
+      "title": "DeVET 攻防：API 超限 A4",
+      "prompt": "安全验证任务：先调用 devet_build_scenario 构建委托链，再调用 devet_simulate_attack（attack_type=A4_api_overrun）。根据工具返回结果回答，只输出一行：DETECTED=YES/NO FAULT=<实际 fault_type> BLAME=<blame_path 第一个节点>。例：DETECTED=YES FAULT=policy_violation BLAME=delegation[0]",
+      "golden_answer": "DETECTED=YES FAULT=policy_violation BLAME=delegation[0]",
+      "critical_patterns": [
+        "DETECTED=YES",
+        "policy_violation"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "require_tool_prefix": "devet_simulate_attack"
+    },
+    {
+      "id": "F4",
+      "category": "F",
+      "fixture": "go-todo",
+      "title": "DeVET 攻防：Grant 篡改 A7",
+      "prompt": "安全验证任务：先调用 devet_build_scenario 构建委托链，再调用 devet_simulate_attack（attack_type=A7_grant_tampering）。根据工具返回结果回答，只输出一行：DETECTED=YES/NO FAULT=<实际 fault_type> BLAME=<blame_path 第一个节点>。例：DETECTED=YES FAULT=grant_tampered BLAME=delegation[0]",
+      "golden_answer": "DETECTED=YES FAULT=grant_tampered BLAME=delegation[0]",
+      "critical_patterns": [
+        "DETECTED=YES",
+        "grant_tampered"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "require_tool_prefix": "devet_simulate_attack"
+    },
+    {
+      "id": "F5",
+      "category": "F",
+      "fixture": "go-todo",
+      "title": "DeVET 攻防：跨 Host 共谋 A8",
+      "prompt": "安全验证任务：先调用 devet_build_scenario 构建委托链，再调用 devet_simulate_attack（attack_type=A8_collusion）。根据工具返回结果回答，只输出一行：DETECTED=YES/NO FAULT=<实际 fault_type> BLAME=<blame_path 第一个节点>。例：DETECTED=YES FAULT=subagent_proof_invalid BLAME=delegation[0]",
+      "golden_answer": "DETECTED=YES FAULT=subagent_proof_invalid BLAME=delegation[0]",
+      "critical_patterns": [
+        "DETECTED=YES",
+        "subagent_proof_invalid"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "require_tool_prefix": "devet_simulate_attack"
+    },
+    {
+      "id": "F6",
+      "category": "F",
+      "fixture": "go-todo",
+      "title": "DeVET 攻防：重放攻击 A10",
+      "prompt": "安全验证任务：先调用 devet_build_scenario 构建委托链，再调用 devet_simulate_attack（attack_type=A10_replayed_grant）。根据工具返回结果回答，只输出一行：DETECTED=YES/NO FAULT=<实际 fault_type> BLAME=<blame_path 第一个节点>。例：DETECTED=YES FAULT=expired BLAME=delegation[0]",
+      "golden_answer": "DETECTED=YES FAULT=expired BLAME=delegation[0]",
+      "critical_patterns": [
+        "DETECTED=YES",
+        "expired"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "require_tool_prefix": "devet_simulate_attack"
     }
   ]
 }

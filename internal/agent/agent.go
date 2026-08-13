@@ -101,6 +101,13 @@ type Options struct {
 	// or a bare model). Used by sub-agents (task tool) to switch to a cheaper
 	// model; nil means model overrides are unavailable.
 	ProvFactory func(model string) (provider.Provider, error)
+	// ProviderLabel is the parent provider family name ("openai", "deepseek",
+	// ...), used as the DeVET mirror endpoint label. Empty falls back to
+	// "bounty.local".
+	ProviderLabel string
+	// DeVET auto-verifies every completed sub-agent result against the DeVET
+	// backend (P4-1). nil disables the hook.
+	DeVET DeVETVerifier
 }
 
 // Agent is the core turn-taking loop: stream LLM output, collect tool calls,
@@ -152,6 +159,8 @@ type Agent struct {
 	todos            TodoSummaryProvider
 	todoBlock        string
 	provFactory      func(model string) (provider.Provider, error)
+	provLabel        string
+	devetVerifier    DeVETVerifier
 
 	// Cached-prefix tracking for accurate cache hit/miss stats (the cacheable
 	// region of the previous request: all messages except the last one).
@@ -184,6 +193,8 @@ func New(prov provider.Provider, tools *tool.Registry, session *Session, opts Op
 		repoMap:          opts.RepoMap,
 		todos:            opts.Todos,
 		provFactory:      opts.ProvFactory,
+		provLabel:        opts.ProviderLabel,
+		devetVerifier:    opts.DeVET,
 		hooks:            opts.Hooks,
 		asker:            opts.Asker,
 		checkpointer:     opts.Checkpointer,

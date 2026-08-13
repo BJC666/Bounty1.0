@@ -8,6 +8,7 @@ import (
 
 	"bounty/internal/agent"
 	"bounty/internal/checkpoint"
+	"bounty/internal/devet"
 	"bounty/internal/event"
 	"bounty/internal/hook"
 	"bounty/internal/permission"
@@ -22,20 +23,21 @@ import (
 // plan mode, goals, and pending memory updates before dispatching to the agent
 // runner.
 type Controller struct {
-	runner    agent.Runner
-	sink      event.Sink
-	store     *store.Store
-	sessionID string
-	planMode  bool
-	hooks     *hook.Runner
-	gate      *permission.Gate
-	skills    *skill.Store
-	commands  *plugin.CommandStore
-	agentDefs *plugin.AgentStore
-	restorer  checkpoint.Restorer
-	mu        sync.Mutex
-	pending   []string
-	goalText  string
+	runner     agent.Runner
+	devetState func() *devet.StateSnapshot
+	sink       event.Sink
+	store      *store.Store
+	sessionID  string
+	planMode   bool
+	hooks      *hook.Runner
+	gate       *permission.Gate
+	skills     *skill.Store
+	commands   *plugin.CommandStore
+	agentDefs  *plugin.AgentStore
+	restorer   checkpoint.Restorer
+	mu         sync.Mutex
+	pending    []string
+	goalText   string
 }
 
 // New creates a Controller wired to the given runner, sink, store, hooks, gate,
@@ -128,6 +130,24 @@ func (c *Controller) SwitchProvider(p provider.Provider, modelName string) error
 }
 
 // GetStore returns the underlying store for direct access (e.g., by export handlers).
+// AttachDeVET registers the DeVET state provider for the web chain panel.
+func (c *Controller) AttachDeVET(fn func() *devet.StateSnapshot) {
+	c.mu.Lock()
+	c.devetState = fn
+	c.mu.Unlock()
+}
+
+// DeVETState returns the latest DeVET verification snapshot (nil if absent).
+func (c *Controller) DeVETState() *devet.StateSnapshot {
+	c.mu.Lock()
+	fn := c.devetState
+	c.mu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	return fn()
+}
+
 func (c *Controller) GetStore() *store.Store { return c.store }
 
 // AddSink attaches a dynamic event sink (e.g. an SSE stream). It only takes

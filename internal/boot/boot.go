@@ -136,6 +136,13 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		fmt.Fprintf(os.Stderr, "DeVET: %v (tools will be unavailable)\n", devetErr)
 	}
 	builtin.RegisterDeVET(reg, devetBackend)
+	// P4-1: full-chain integration — every task/fleet sub-agent result is
+	// mirrored into DeVET and auto-verified; the client also keeps the
+	// latest snapshot for the web chain-visualisation panel.
+	var devetMirror *devet.MirrorClient
+	if devetBackend != nil {
+		devetMirror = devet.NewMirrorClient(devetBackend)
+	}
 	reg.Add(builtin.NewRepoMapTool(repoMapMgr))
 
 	// 5b. Connect MCP plugins (bounty.toml [plugins]) and JSON config files
@@ -277,6 +284,8 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	todoSum := &todoSummary{}
 
 	ag := agent.New(prov, reg, session, agent.Options{
+		ProviderLabel: provName,
+		DeVET:         devetMirror,
 		MaxSteps:      opts.MaxSteps,
 		Temperature:   cfg.Agent.Temperature,
 		Sink:          fanout,
@@ -381,6 +390,9 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 
 	// 15. Create Controller
 	ctrl := control.New(ag, fanout, st, hookRunner, permGate, skillStore, cmdStore, agentStore, opts.SessionID)
+	if devetMirror != nil {
+		ctrl.AttachDeVET(devetMirror.State)
+	}
 	if r, ok := ckpt.(checkpoint.Restorer); ok {
 		ctrl.SetCheckpointRestorer(r)
 	}

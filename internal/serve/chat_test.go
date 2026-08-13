@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"bounty/internal/checkpoint"
+	"bounty/internal/devet"
 )
 
 func TestModelSwitchEndpoint(t *testing.T) {
@@ -170,6 +171,55 @@ func TestCheckpointRestoreEndpoint(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		if rec.Code != http.StatusNotImplemented {
 			t.Fatalf("status = %d, want 501", rec.Code)
+		}
+	})
+}
+
+func TestDeVETStateEndpoint(t *testing.T) {
+	t.Run("ok with snapshot", func(t *testing.T) {
+		ok := true
+		h := &ChatHandler{DeVETStateFn: func() *devet.StateSnapshot {
+			return &devet.StateSnapshot{
+				Available: true, HostName: "bounty-host", Authentic: true,
+				Agents: []devet.AgentState{{Name: "explore-subagent", Role: "explore", Model: "deepseek-chat", ToolCalls: 3, Authentic: &ok}},
+			}
+		}}
+		req := httptest.NewRequest(http.MethodGet, "/chat/api/devet/state", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Status   string               `json:"status"`
+			Snapshot *devet.StateSnapshot `json:"snapshot"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("bad json: %v", err)
+		}
+		if resp.Status != "ok" || resp.Snapshot == nil || !resp.Snapshot.Authentic || len(resp.Snapshot.Agents) != 1 {
+			t.Fatalf("resp = %+v", resp)
+		}
+	})
+	t.Run("empty before first verification", func(t *testing.T) {
+		h := &ChatHandler{DeVETStateFn: func() *devet.StateSnapshot { return nil }}
+		req := httptest.NewRequest(http.MethodGet, "/chat/api/devet/state", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d", rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), `"status":"empty"`) {
+			t.Fatalf("body = %s", rec.Body.String())
+		}
+	})
+	t.Run("unavailable when not wired", func(t *testing.T) {
+		h := &ChatHandler{}
+		req := httptest.NewRequest(http.MethodGet, "/chat/api/devet/state", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"unavailable"`) {
+			t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 		}
 	})
 }

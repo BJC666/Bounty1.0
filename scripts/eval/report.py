@@ -15,7 +15,7 @@ from pathlib import Path
 EVAL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EVAL_DIR.parents[1]
 
-CATEGORY_NAMES = {"A": "仓库理解", "B": "多文件改动", "C": "修 bug", "D": "记忆", "E": "生态（MCP/子代理）"}
+CATEGORY_NAMES = {"A": "仓库理解", "B": "多文件改动", "C": "修 bug", "D": "记忆", "E": "生态（MCP/子代理）", "F": "DeVET 攻防"}
 
 
 def collect(run_dirs):

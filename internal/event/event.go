@@ -33,6 +33,31 @@ type Event struct {
 	// Turn lifecycle
 	TurnComplete bool   `json:"TurnComplete,omitempty"`
 	TurnErr      string `json:"TurnErr,omitempty"`
+
+	// DeVET sub-agent verification (P4-1): emitted after a task/fleet
+	// sub-agent result has been mirrored and verified.
+	Devet *DeVETEvent `json:"Devet,omitempty"`
+}
+
+// DeVETEvent carries one sub-agent verification outcome for live frontends.
+type DeVETEvent struct {
+	HostName  string            `json:"host_name"`
+	Agents    []DeVETAgentEvent `json:"agents"`
+	Authentic bool              `json:"authentic"`
+	Fault     string            `json:"fault,omitempty"`
+	Blame     []string          `json:"blame,omitempty"`
+	Error     string            `json:"error,omitempty"`
+}
+
+// DeVETAgentEvent is one delegate row in the chain panel.
+type DeVETAgentEvent struct {
+	Name         string   `json:"name"`
+	Role         string   `json:"role"`
+	Model        string   `json:"model"`
+	Commitment   string   `json:"commitment"`
+	ToolCalls    int      `json:"tool_calls"`
+	WrittenFiles []string `json:"written_files,omitempty"`
+	FaultType    string   `json:"fault_type,omitempty"`
 }
 
 type Usage struct {

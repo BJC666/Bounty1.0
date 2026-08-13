@@ -338,6 +338,7 @@ func dashboardCmd() {
 			}
 			return restorer.RestoreCheckpoint(msgIndex)
 		},
+		DeVETStateFn: ctrl.DeVETState,
 	}
 
 	dashboard := &serve.DashboardHandler{

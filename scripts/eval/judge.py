@@ -215,7 +215,7 @@ def judge_one(task, task_dir):
                 "changed_files": compare_dirs(pristine, src),
                 "forbidden_hits": [], "diff_lines": None}
 
-    if task["category"] == "E":
+    if task["category"] in ("E", "F"):
         ok, reason = judge_a(task, run)
         used = run.get("tools_used") or []
         prefix = task.get("require_tool_prefix") or "mcp__math__"
