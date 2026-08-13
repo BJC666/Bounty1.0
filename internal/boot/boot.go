@@ -663,14 +663,14 @@ func buildSystemPrompt(cfg *config.Config, modelName string, docs []memory.Doc, 
 			fields := e.Name + " " + e.Description + " " + e.Content
 			if hits := memory.ScanAll(fields); len(hits) > 0 {
 				sb.WriteString(fmt.Sprintf("<data source=\"auto-memory\" warning=\"injection markers: %s\">\n%s\n</data>\n",
-					strings.Join(hits, ", "), truncateRunes(e.Content, 240)))
+					strings.Join(hits, ", "), truncateRunes(e.Content, 200)))
 				continue
 			}
 			desc := e.Description
 			if desc == "" {
 				desc = e.Name
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** — %s: %s\n", e.Name, desc, truncateRunes(e.Content, 120)))
+			sb.WriteString(fmt.Sprintf("- **%s** — %s: %s\n", e.Name, desc, truncateRunes(e.Content, 100)))
 		}
 	} else {
 		sb.WriteString("(none yet)\n")
@@ -690,7 +690,7 @@ func buildSystemPrompt(cfg *config.Config, modelName string, docs []memory.Doc, 
 
 // autoMemoryInjectionLimit caps how many recent auto-memory entries are
 // injected into the system prompt at startup (most recent first).
-const autoMemoryInjectionLimit = 4 // P6 裁剪：8 条注入成本高于收益，保留最相关
+const autoMemoryInjectionLimit = 3 // P6 裁剪二轮：仅注入最相关记忆
 
 // todoSummary implements agent.TodoSummaryProvider: it renders the current
 // todo list (≤10 items) for injection into the system prompt tail.

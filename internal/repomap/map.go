@@ -27,7 +27,7 @@ type FileNode struct {
 // DefaultMaxFiles and DefaultMaxRunes bound the rendered repo map.
 const (
 	DefaultMaxFiles = 300
-	DefaultMaxRunes = 7000 // ≈ 1750 tokens at 4 runes/token (P6 裁剪：全量注入成本实测高于收益)
+	DefaultMaxRunes = 5000 // ≈ 1250 tokens at 4 runes/token (P6 裁剪二轮：B/C 类注入成本仍高)
 	MaxSymbolsFile  = 40
 	MaxDepsFile     = 5
 )

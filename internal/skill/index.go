@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const maxIndexChars = 2500 // P6 裁剪：索引只列名+描述，命中才注入正文
+const maxIndexChars = 2000 // P6 裁剪二轮：索引只列名+描述，命中才注入正文
 
 // IndexBlock returns a cache-friendly skill index for the system prompt.
 // Only name + description + subagent tag, capped at maxIndexChars.
