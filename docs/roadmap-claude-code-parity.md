@@ -220,6 +220,7 @@
 **P4-4 多模态输入（S10）**
 - 目标：`provider.Message` 升级 content blocks（text+image base64），三 provider 各自映射；TUI 支持粘贴图片路径。
 - 验收：截图报错 Eval 3 题通过。
+- 状态（2026-08-13）：✅ 已交付——①`provider.Message` 增加 `Parts []ContentPart`（text/image），`NewUserMessage` 与 `LoadImageFile`（mime 白名单 png/jpeg/gif/webp、单图≤10MiB、base64）；文本消息保持原字符串形态（零破坏）。②四 provider 全部映射：OpenAI 兼容/native（text + image_url data URL）、Anthropic（text + image/source.base64）、Ollama（经 OpenAI 兼容客户端继承）；unit 测试锁定两端线上格式。③TUI 粘贴图片路径：输入里存在的图片文件路径（≤4 张，含带空格引号路径）自动识别并转为多模态消息，UI 回显 🖼 行；`bounty run` 支持 `--image` 重复参数。④Eval 新增 G 类 3 题（截图报错：Go 编译错误/测试失败/Python 异常栈，PIL 生成 fixture），runner 传 --image、judge 按关键点、selfcheck 49/49；qwen/qwen3.8-max 实测 3/3 通过（模型逐字读出报错并给出文件:行号）。诚实边界：G 类需多模态模型（DeepSeek 无视觉，跑 G 会失败属预期）；图片不进 SQLite 会话持久化与压缩摘要（重新加载会话后图片消息丢失，TUI 回显仍保留）；token 统计不含图片字节（按 API 返回 usage 计）。
 
 ---
 

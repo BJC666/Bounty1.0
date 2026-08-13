@@ -53,6 +53,12 @@ func New(runner agent.Runner, sink event.Sink, st *store.Store, hooks *hook.Runn
 // Send composes the user input with plan mode, goal text, and any pending memory
 // updates, fires the UserPromptSubmit hook, then dispatches to the agent runner.
 func (c *Controller) Send(ctx context.Context, text string) error {
+	return c.SendWithImages(ctx, text, nil)
+}
+
+// SendWithImages is Send for a multimodal turn: the images are attached as
+// content blocks after the (composed) text.
+func (c *Controller) SendWithImages(ctx context.Context, text string, images []provider.ImagePart) error {
 	c.mu.Lock()
 	if c.hooks != nil {
 		result, err := c.hooks.Fire(ctx, hook.UserPromptSubmit, hook.Payload{
@@ -73,7 +79,10 @@ func (c *Controller) Send(ctx context.Context, text string) error {
 
 	input := c.compose(text)
 	c.mu.Unlock()
-	return c.runner.Run(ctx, input)
+	if len(images) == 0 {
+		return c.runner.Run(ctx, input)
+	}
+	return c.runner.RunWithImages(ctx, input, images)
 }
 
 // compose builds the final input string by layering plan mode, goal text, and

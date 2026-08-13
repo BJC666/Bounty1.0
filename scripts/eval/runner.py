@@ -158,6 +158,9 @@ def run_one(args, task, model, run_id, bounty_bin):
         str(bounty_bin), "run", task["prompt"],
         "--json", "--model=" + model, "--max-steps=" + str(args.max_steps),
     ]
+    for img in task.get("images") or []:
+        img_path = EVAL_DIR / img
+        cmd.append("--image=" + str(img_path))
     started = time.time()
     timeout = False
     exit_code = None

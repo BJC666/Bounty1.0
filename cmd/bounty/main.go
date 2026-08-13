@@ -19,6 +19,7 @@ import (
 	"bounty/internal/config"
 	"bounty/internal/event"
 	"bounty/internal/permission"
+	"bounty/internal/provider"
 	"bounty/internal/remote"
 	"bounty/internal/repair"
 	"bounty/internal/serve"
@@ -163,8 +164,13 @@ func runCmd() {
 		useJSON  bool
 		model    string
 		maxSteps int
+		images   []string
 	)
-	for _, arg := range os.Args[3:] {
+	for i := 0; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if i < 3 {
+			continue
+		}
 		switch {
 		case arg == "--json":
 			useJSON = true
@@ -174,6 +180,11 @@ func runCmd() {
 			if n, err := strconv.Atoi(strings.TrimPrefix(arg, "--max-steps=")); err == nil && n > 0 {
 				maxSteps = n
 			}
+		case arg == "--image" && i+1 < len(os.Args):
+			images = append(images, os.Args[i+1])
+			i++
+		case strings.HasPrefix(arg, "--image="):
+			images = append(images, strings.TrimPrefix(arg, "--image="))
 		}
 	}
 
@@ -211,6 +222,22 @@ func runCmd() {
 	}
 
 	ctx := context.Background()
+	if len(images) > 0 {
+		parts := make([]provider.ImagePart, 0, len(images))
+		for _, img := range images {
+			part, err := provider.LoadImageFile(img)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			parts = append(parts, part)
+		}
+		if err := ctrl.SendWithImages(ctx, prompt, parts); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := ctrl.Send(ctx, prompt); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

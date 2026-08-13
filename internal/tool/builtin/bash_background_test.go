@@ -3,10 +3,23 @@ package builtin
 import (
 	"context"
 	"encoding/json"
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+// cmdActive reports whether the bash tool will use cmd.exe as its shell
+// (sh missing from PATH), which is the environment the Windows tests target.
+// Lives here because bash_windows_test.go only compiles on Windows.
+func cmdActive() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	_, err := exec.LookPath("sh")
+	return err != nil
+}
 
 // bgCommand returns a command that prints bg-start, sleeps ~seconds, then
 // prints bg-done — portable across cmd.exe (Windows) and sh (CI Linux).

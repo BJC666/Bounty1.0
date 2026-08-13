@@ -23,6 +23,8 @@ import (
 // agent loop to completion.
 type Runner interface {
 	Run(ctx context.Context, input string) error
+	// RunWithImages is a multimodal turn: text plus images as content blocks.
+	RunWithImages(ctx context.Context, input string, images []provider.ImagePart) error
 }
 
 // Gate intercepts tool calls and decides whether to allow, deny, or escalate.
@@ -299,6 +301,25 @@ func (a *Agent) provider() provider.Provider {
 // Run drives a single user input through the agent loop until the model stops
 // requesting tool calls or the step limit is reached.
 func (a *Agent) Run(ctx context.Context, input string) error {
+	return a.RunMessage(ctx, provider.NewUserMessage(input))
+}
+
+// RunWithImages drives a multimodal user turn: text plus attached images.
+// Images are serialized into content blocks (see provider.Message.Parts).
+func (a *Agent) RunWithImages(ctx context.Context, input string, images []provider.ImagePart) error {
+	return a.RunMessage(ctx, provider.NewUserMessage(input, images...))
+}
+
+// RunMessage is the shared turn driver for text and multimodal inputs.
+func (a *Agent) RunMessage(ctx context.Context, msg provider.Message) error {
+	input := msg.Content
+	if input == "" && len(msg.Parts) > 0 {
+		for _, p := range msg.Parts {
+			if p.Type == "text" {
+				input = p.Text
+			}
+		}
+	}
 	sess := a.Session()
 	turnMsgIndex := sess.Len() // snapshot before adding user message
 
@@ -309,7 +330,7 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 		}
 	}
 
-	sess.Add(provider.Message{Role: "user", Content: input})
+	sess.Add(msg)
 
 	a.refreshContext(sess)
 

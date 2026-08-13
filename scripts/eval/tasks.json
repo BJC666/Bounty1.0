@@ -845,6 +845,66 @@
       "forbidden_files": [],
       "max_diff_lines": null,
       "require_tool_prefix": "devet_simulate_attack"
+    },
+    {
+      "id": "G1",
+      "category": "G",
+      "fixture": "img-errors",
+      "title": "截图报错-Go 编译错误",
+      "prompt": "请查看附带截图（fixtures/img-errors/compile-error.png，一张终端报错截图），回答：编译错误是什么？发生在哪个文件第几行？直接回答，不要调用工具。",
+      "golden_answer": "截图显示 Go 编译错误：internal/main.go 第 42 行 undefined: getTodos，构建失败。",
+      "critical_patterns": [
+        "undefined",
+        "main.go",
+        "42"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "images": [
+        "fixtures/img-errors/compile-error.png"
+      ]
+    },
+    {
+      "id": "G2",
+      "category": "G",
+      "fixture": "img-errors",
+      "title": "截图报错-Go 测试失败",
+      "prompt": "请查看附带截图（fixtures/img-errors/test-failure.png，一张 go test 失败的终端截图），回答：哪个测试用例失败？断言差异是什么（got/want）？在哪个文件第几行？直接回答，不要调用工具。",
+      "golden_answer": "截图显示 TestAddTodo 失败：todo_test.go 第 17 行断言 got 2, want 3，整个测试包 FAIL。",
+      "critical_patterns": [
+        "TestAddTodo",
+        "got 2",
+        "want 3"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "images": [
+        "fixtures/img-errors/test-failure.png"
+      ]
+    },
+    {
+      "id": "G3",
+      "category": "G",
+      "fixture": "img-errors",
+      "title": "截图报错-Python 异常栈",
+      "prompt": "请查看附带截图（fixtures/img-errors/traceback.png，一张 Python 异常栈截图），回答：异常类型是什么？异常信息是什么？抛出异常的文件和行号？直接回答，不要调用工具。",
+      "golden_answer": "截图显示 ZeroDivisionError: division by zero，异常抛出在 app.py 的 compute 函数（第 12 行），调用链从 main（第 33 行）进入。",
+      "critical_patterns": [
+        "ZeroDivisionError",
+        "division by zero",
+        "app.py"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "images": [
+        "fixtures/img-errors/traceback.png"
+      ]
     }
   ]
 }

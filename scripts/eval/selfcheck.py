@@ -65,7 +65,7 @@ def main():
     try:
         for task in tasks:
             tid = task["id"]
-            if task["category"] in ("A", "D", "E", "F"):
+            if task["category"] in ("A", "D", "E", "F", "G"):
                 golden = (task.get("golden_answer") or "").lower()
                 missing = [p for p in task["critical_patterns"] if p.lower() not in golden]
                 any_missing = [p for p in task.get("any_of", []) if p.lower() not in golden]

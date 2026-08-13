@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,16 +12,6 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
 )
-
-// cmdActive reports whether the bash tool will use cmd.exe as its shell
-// (sh missing from PATH), which is the environment these Windows tests target.
-func cmdActive() bool {
-	if runtime.GOOS != "windows" {
-		return false
-	}
-	_, err := exec.LookPath("sh")
-	return err != nil
-}
 
 func TestPrecheckWindowsCommand(t *testing.T) {
 	cases := []struct {
