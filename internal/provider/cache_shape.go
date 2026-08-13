@@ -72,6 +72,43 @@ type CacheStats struct {
 	LastMiss      *CacheMissReason
 }
 
+// HashMessages hashes a message sequence (used for cached-prefix identity).
+func HashMessages(msgs []Message) string {
+	h := sha256.New()
+	for _, m := range msgs {
+		write := func(s string) {
+			h.Write([]byte(s))
+			h.Write([]byte{0})
+		}
+		write(m.Role)
+		write(m.Content)
+		write(m.ToolName)
+		write(m.ToolID)
+		for _, tc := range m.ToolCalls {
+			write(tc.ID)
+			write(tc.Name)
+			h.Write(tc.Args)
+			h.Write([]byte{0})
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)[:8])
+}
+
+// RecordHit registers a request whose stable prefix was reused.
+func (cs *CacheStats) RecordHit() {
+	cs.TotalRequests++
+	cs.CacheHits++
+}
+
+// RecordMiss registers a request whose stable prefix changed.
+func (cs *CacheStats) RecordMiss(reason *CacheMissReason) {
+	cs.TotalRequests++
+	cs.CacheMisses++
+	if reason != nil {
+		cs.LastMiss = reason
+	}
+}
+
 // Record compares two shapes and updates the stats.
 func (cs *CacheStats) Record(prev, curr PrefixShape) {
 	cs.TotalRequests++

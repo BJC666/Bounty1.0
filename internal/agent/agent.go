@@ -61,17 +61,19 @@ type Checkpointer interface {
 
 // Options configures an Agent. Zero values get sensible defaults.
 type Options struct {
-	MaxSteps     int
-	Temperature  float64
-	Sink         event.Sink
-	Gate         Gate
-	Hooks        ToolHooks
-	Asker        Asker
-	Checkpointer Checkpointer
-	MaxToolOut   int
-	Insights     *SessionInsights
+	MaxSteps      int
+	Temperature   float64
+	Sink          event.Sink
+	Gate          Gate
+	Hooks         ToolHooks
+	Asker         Asker
+	Checkpointer  Checkpointer
+	MaxToolOut    int
+	Insights      *SessionInsights
 	Reviewer      *BackgroundReviewer
 	LearningGraph *LearningGraph
+	// Compact overrides compaction thresholds and the summarizer; nil = defaults.
+	Compact *CompactConfig
 }
 
 // Agent is the core turn-taking loop: stream LLM output, collect tool calls,
@@ -108,6 +110,14 @@ type Agent struct {
 	reviewer   *BackgroundReviewer
 	learnGraph *LearningGraph
 	skillTurns int // turns since last skill use
+
+	// Compaction
+	compactCfg *CompactConfig
+
+	// Cached-prefix tracking for accurate cache hit/miss stats (the cacheable
+	// region of the previous request: all messages except the last one).
+	lastCachedLen  int
+	lastCachedHash string
 }
 
 // New creates an Agent. It applies defaults for zero-valued Options.
@@ -129,6 +139,7 @@ func New(prov provider.Provider, tools *tool.Registry, session *Session, opts Op
 		temp:         opts.Temperature,
 		sink:         opts.Sink,
 		gate:         opts.Gate,
+		compactCfg:   opts.Compact,
 		hooks:        opts.Hooks,
 		asker:        opts.Asker,
 		checkpointer: opts.Checkpointer,
@@ -224,14 +235,38 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 		schemas := a.tools.Schemas()
 		prov := a.provider()
 
-		// Compute prompt cache shape to track cache hits and misses.
+		// Compute prompt cache shape to track cache hits and misses. A hit
+		// requires (a) stable system/tools/provider prefix and (b) the
+		// previous cached region (all messages except the last one) still
+		// being a prefix of this request — so compaction or history edits
+		// correctly surface as cache misses.
 		if provWithCache, ok := prov.(interface{ Version() string }); ok {
 			shape := provider.ComputeShape(sess.SystemPrompt, schemas, provWithCache.Version())
 			if a.haveLastPrefixShape {
-				a.cacheStats.Record(a.lastPrefixShape, shape)
+				hit := true
+				var miss *provider.CacheMissReason
+				if r := shape.Compare(a.lastPrefixShape); r != nil {
+					hit = false
+					miss = r
+				}
+				if hit {
+					currLen := len(messages) - 1
+					if a.lastCachedLen > currLen ||
+						provider.HashMessages(messages[:a.lastCachedLen]) != a.lastCachedHash {
+						hit = false
+						miss = &provider.CacheMissReason{Reasons: []string{"conversation prefix changed (compaction or history edit)"}}
+					}
+				}
+				if hit {
+					a.cacheStats.RecordHit()
+				} else {
+					a.cacheStats.RecordMiss(miss)
+				}
 			}
 			a.lastPrefixShape = shape
 			a.haveLastPrefixShape = true
+			a.lastCachedLen = len(messages) - 1
+			a.lastCachedHash = provider.HashMessages(messages[:a.lastCachedLen])
 		}
 
 		ch, err := prov.Stream(ctx, messages, schemas, provider.StreamOpts{Temperature: a.temp})
@@ -345,7 +380,7 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 			}()
 		}
 
-		a.maybeCompact(sess)
+		a.maybeCompact(ctx, sess)
 	}
 	return nil
 }

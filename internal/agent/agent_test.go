@@ -69,6 +69,8 @@ func (f *fakeProvider) Stream(ctx context.Context, messages []provider.Message, 
 	return ch, nil
 }
 
+func (f *fakeProvider) ContextWindow() int { return 0 }
+
 func TestSetProviderSwaps(t *testing.T) {
 	reg := tool.NewRegistry()
 	reg.Add(fakeTool{name: "fake"})

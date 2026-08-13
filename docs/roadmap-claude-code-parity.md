@@ -125,6 +125,7 @@
 - 目标：达到阈值时**用同/低档模型生成结构化摘要**（任务目标、已做决策、关键文件改动、未完成事项、错误教训），然后 `system + 摘要 + 尾部 N 条` 重建会话；摘要复用 `PreCompact` hook 通知（已有）。
 - 细节：`MaxContext` 从 provider `ContextWindow` 读取；摘要本身计入下一轮缓存形状（`PrefixShape` 已有）；配 golden 测试（给定对话序列，断言摘要含关键事实、重建后不丢 todo 状态）。
 - 验收：10 个长会话（200 轮模拟）压缩后，任务关键信息保留率 100%（单测断言）；token 环比下降。
+- 状态（2026-08-13）：✅ 已交付——`internal/agent/compact.go` 重写为模型生成结构化中文摘要（任务目标/已做决策/关键文件改动/未完成事项/错误教训五小节），软/紧两级阈值 + 强压只保最近 2 条；`MaxContext` 改为从 provider `ContextWindow()` 读取；`CompactConfig.Summarizer/SummaryPrompt` 可注入；摘要计入下一轮缓存形状（append=hit / compact=miss）；`PreCompact` hook + notification 事件触发。验收测试 10 个全绿：`internal/agent/compact_test.go`（9 个 golden/行为测试 + 1 个端到端 `TestRunCompactsWithProviderSummaryEndToEnd`），10 个 200 轮长会话关键事实保留率 100%、二次压缩幂等；`go build ./...` 与 `go test ./...` 全绿。
 
 **P1-2 记忆闭环（S2+S3）**
 - 现状：remember 只写不读；后台反思只发通知。

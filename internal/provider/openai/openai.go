@@ -106,6 +106,9 @@ type accToolCall struct {
 // Version returns a stable identifier for this provider implementation.
 func (p *Provider) Version() string { return "openai-compat/1.0" }
 
+// ContextWindow returns the configured model context window in tokens.
+func (p *Provider) ContextWindow() int { return p.MaxContext }
+
 func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tools []json.RawMessage, opts provider.StreamOpts) (<-chan provider.StreamEvent, error) {
 	chatMsgs := make([]chatMessage, len(messages))
 	for i, m := range messages {

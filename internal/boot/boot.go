@@ -229,6 +229,11 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		Reviewer:      reviewer,
 		Checkpointer:  ckpt,
 		LearningGraph: learningGraph,
+		Compact: &agent.CompactConfig{
+			SoftRatio:  cfg.Agent.SoftCompactRatio,
+			Ratio:      cfg.Agent.CompactRatio,
+			ForceRatio: cfg.Agent.CompactForceRatio,
+		},
 	})
 
 	// 12b. Register subagent tools onto the same registry
@@ -413,6 +418,17 @@ func (a hookAdapter) PreToolUse(ctx context.Context, name string, args json.RawM
 		return fmt.Errorf("tool %s blocked by hook", name)
 	}
 	return nil
+}
+
+func (a hookAdapter) PreCompact(ctx context.Context, tokens int, dropped int) error {
+	if a.runner == nil {
+		return nil
+	}
+	_, err := a.runner.Fire(ctx, hook.PreCompact, hook.Payload{
+		Event:  hook.PreCompact,
+		Reason: fmt.Sprintf("context %d tokens, %d messages to summarize", tokens, dropped),
+	})
+	return err
 }
 
 func (a hookAdapter) PostToolUse(ctx context.Context, name string, result string, execErr error) {

@@ -54,4 +54,7 @@ type StreamOpts struct {
 
 type Provider interface {
 	Stream(ctx context.Context, messages []Message, tools []json.RawMessage, opts StreamOpts) (<-chan StreamEvent, error)
+	// ContextWindow returns the provider's model context window in tokens
+	// (0 = unknown). Used to derive compaction thresholds.
+	ContextWindow() int
 }

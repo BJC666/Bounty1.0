@@ -73,15 +73,15 @@ type apiMessage struct {
 }
 
 type contentBlock struct {
-	Type         string      `json:"type"`                   // "text", "tool_use", "tool_result", "thinking"
+	Type         string      `json:"type"` // "text", "tool_use", "tool_result", "thinking"
 	Text         string      `json:"text,omitempty"`
-	ID           string      `json:"id,omitempty"`           // tool_use
-	Name         string      `json:"name,omitempty"`         // tool_use
-	Input        interface{} `json:"input,omitempty"`        // tool_use / tool_result
-	ToolUseID    string      `json:"tool_use_id,omitempty"`  // tool_result
-	Content      interface{} `json:"content,omitempty"`      // tool_result content
-	Thinking     string      `json:"thinking,omitempty"`     // thinking block
-	Signature    string      `json:"signature,omitempty"`    // thinking signature
+	ID           string      `json:"id,omitempty"`          // tool_use
+	Name         string      `json:"name,omitempty"`        // tool_use
+	Input        interface{} `json:"input,omitempty"`       // tool_use / tool_result
+	ToolUseID    string      `json:"tool_use_id,omitempty"` // tool_result
+	Content      interface{} `json:"content,omitempty"`     // tool_result content
+	Thinking     string      `json:"thinking,omitempty"`    // thinking block
+	Signature    string      `json:"signature,omitempty"`   // thinking signature
 	CacheControl *cacheCtrl  `json:"cache_control,omitempty"`
 }
 
@@ -99,11 +99,11 @@ type apiTool struct {
 // ── Response types ──
 
 type sseEvent struct {
-	Type         string            `json:"type"`
-	Delta        *sseDelta         `json:"delta,omitempty"`
-	Usage        *sseUsage         `json:"usage,omitempty"`
-	Message      *sseMessage       `json:"message,omitempty"`
-	ContentBlock *sseContentBlock  `json:"content_block,omitempty"`
+	Type         string           `json:"type"`
+	Delta        *sseDelta        `json:"delta,omitempty"`
+	Usage        *sseUsage        `json:"usage,omitempty"`
+	Message      *sseMessage      `json:"message,omitempty"`
+	ContentBlock *sseContentBlock `json:"content_block,omitempty"`
 }
 
 type sseDelta struct {
@@ -134,6 +134,9 @@ type sseContentBlock struct {
 
 // Version returns a stable identifier for this provider implementation.
 func (p *Provider) Version() string { return "anthropic/2023-06-01" }
+
+// ContextWindow returns the configured model context window in tokens.
+func (p *Provider) ContextWindow() int { return p.MaxContext }
 
 func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tools []json.RawMessage, opts provider.StreamOpts) (<-chan provider.StreamEvent, error) {
 	// Separate system prompt from messages. Tool results must be sent as

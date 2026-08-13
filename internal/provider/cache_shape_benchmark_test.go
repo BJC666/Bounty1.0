@@ -97,4 +97,3 @@ func TestCacheStatsToolContentChangeMiss(t *testing.T) {
 	}
 	t.Log("miss reason:", cs.LastMiss.String())
 }
-
