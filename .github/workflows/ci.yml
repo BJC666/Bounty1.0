@@ -79,6 +79,9 @@ jobs:
           python-version: '3.12'
       - name: Install deps
         run: pip install -r third_party/vet-repro/requirements.txt
-      - name: Run pytest
+      - name: Run pytest (vet-repro 30)
         working-directory: third_party/vet-repro
         run: python -m pytest tests -q
+      - name: Run pytest (backend multi-tenant)
+        working-directory: third_party/devet-backend
+        run: python -m pytest test_api_routes.py -q

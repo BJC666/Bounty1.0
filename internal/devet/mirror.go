@@ -23,7 +23,10 @@ type MirrorAgent struct {
 }
 
 // MirrorSpec is the full delegation to verify: one host plus its sub-agents.
+// TenantID scopes the chain on the DeVET backend (multi-tenant sharding) so
+// concurrent Bounty sessions never overwrite each other's chains.
 type MirrorSpec struct {
+	TenantID     string        `json:"tenant_id,omitempty"`
 	HostName     string        `json:"host_name"`
 	HostEndpoint string        `json:"host_endpoint"`
 	Agents       []MirrorAgent `json:"agents"`
@@ -66,22 +69,26 @@ type AgentState struct {
 // /chain/verify and /chain/tamper endpoints. It also keeps the latest
 // snapshot for the web chain-visualisation panel.
 type MirrorClient struct {
-	backend *Backend
-	mu      sync.Mutex
-	snap    *StateSnapshot
+	backend  *Backend
+	tenantID string
+	mu       sync.Mutex
+	snap     *StateSnapshot
 }
 
-// NewMirrorClient wires a client to an existing backend connection.
-func NewMirrorClient(backend *Backend) *MirrorClient {
+// NewMirrorClient wires a client to an existing backend connection. tenantID
+// scopes every chain operation on the backend (typically the Bounty session
+// id); pass "" for the legacy shared "default" tenant.
+func NewMirrorClient(backend *Backend, tenantID string) *MirrorClient {
 	if backend == nil {
 		return nil
 	}
-	return &MirrorClient{backend: backend}
+	return &MirrorClient{backend: backend, tenantID: tenantID}
 }
 
 // MirrorAndVerify posts the delegation spec, verifies it, and records the
 // snapshot. It implements agent.DeVETVerifier.
 func (c *MirrorClient) MirrorAndVerify(ctx context.Context, spec MirrorSpec) (VerifyDetail, error) {
+	spec.TenantID = c.tenantID
 	body, err := json.Marshal(spec)
 	if err != nil {
 		return VerifyDetail{}, fmt.Errorf("devet mirror marshal: %w", err)
@@ -116,7 +123,8 @@ func (c *MirrorClient) MirrorAndVerify(ctx context.Context, spec MirrorSpec) (Ve
 
 // Verify re-verifies the current chain on the backend.
 func (c *MirrorClient) Verify(ctx context.Context) (VerifyDetail, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.backend.BaseURL()+"/chain/verify", bytes.NewReader([]byte("{}")))
+	body, _ := json.Marshal(map[string]string{"tenant_id": c.tenantID})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.backend.BaseURL()+"/chain/verify", bytes.NewReader(body))
 	if err != nil {
 		return VerifyDetail{}, err
 	}
@@ -142,6 +150,7 @@ func (c *MirrorClient) Verify(ctx context.Context) (VerifyDetail, error) {
 // verification result with blame attribution.
 func (c *MirrorClient) Tamper(ctx context.Context, delegateIndex int, forgedCommitment string) (VerifyDetail, error) {
 	body, _ := json.Marshal(map[string]any{
+		"tenant_id":      c.tenantID,
 		"delegate_index": delegateIndex,
 		"commitment":     forgedCommitment,
 	})

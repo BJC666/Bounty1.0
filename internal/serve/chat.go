@@ -3,18 +3,29 @@ package serve
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"bounty/internal/auth"
 	"bounty/internal/checkpoint"
 	"bounty/internal/devet"
+	"bounty/internal/provider"
 )
 
 type ChatHandler struct {
 	SendFn   func(text string) error
 	SwitchFn func(req ModelSwitchRequest) error
+	// SendImagesFn delivers a multimodal turn (text + image paths from the
+	// upload endpoint). nil = image sending unavailable (501).
+	SendImagesFn func(text string, images []provider.ImagePart) error
+	// UploadDir is where /chat/api/upload stores images. Empty defaults to
+	// ~/bounty-data/uploads.
+	UploadDir string
 	// CheckpointListFn/RestoreFn expose the git-shadow-repo rollback
 	// (P3-3). nil means checkpoints are unavailable in this deployment.
 	CheckpointListFn    func() ([]checkpoint.Info, error)
@@ -46,20 +57,46 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path == "/chat/api/send" && r.Method == "POST" {
 		var req struct {
-			Message string `json:"message"`
+			Message string   `json:"message"`
+			Images  []string `json:"images,omitempty"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		if err := h.SendFn(req.Message); err != nil {
+		if len(req.Images) > 0 {
+			if h.SendImagesFn == nil {
+				http.Error(w, "image sending unavailable", 501)
+				return
+			}
+			parts := make([]provider.ImagePart, 0, len(req.Images))
+			for _, img := range req.Images {
+				part, err := provider.LoadImageFile(img)
+				if err != nil {
+					h.writeError(w, "加载图片 "+filepath.Base(img)+": "+err.Error())
+					return
+				}
+				parts = append(parts, part)
+			}
+			if err := h.SendImagesFn(req.Message, parts); err != nil {
+				h.writeError(w, err.Error())
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(500)
-			json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+			json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+			return
+		}
+		if err := h.SendFn(req.Message); err != nil {
+			h.writeError(w, err.Error())
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+		return
+	}
+
+	if r.URL.Path == "/chat/api/upload" && r.Method == "POST" {
+		h.uploadAPI(w, r)
 		return
 	}
 
@@ -137,6 +174,98 @@ func (h *ChatHandler) checkpointsAPI(w http.ResponseWriter) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "checkpoints": list})
+}
+
+// writeError writes a JSON error response.
+func (h *ChatHandler) writeError(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": msg})
+}
+
+// uploadAllowedExt mirrors provider.LoadImageFile's mime whitelist.
+var uploadAllowedExt = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+}
+
+const (
+	maxUploadImages = 4
+	maxUploadBytes  = 10 << 20 // 10MiB per image
+)
+
+// uploadAPI accepts multipart images (field "images", up to 4, 10MiB each,
+// png/jpeg/gif/webp) and returns server-side paths ready for /chat/api/send.
+func (h *ChatHandler) uploadAPI(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(maxUploadBytes + 1<<20); err != nil {
+		http.Error(w, "multipart too large", 400)
+		return
+	}
+	files := r.MultipartForm.File["images"]
+	if len(files) == 0 {
+		http.Error(w, "no images field", 400)
+		return
+	}
+	if len(files) > maxUploadImages {
+		http.Error(w, fmt.Sprintf("at most %d images per turn", maxUploadImages), 400)
+		return
+	}
+	root := h.UploadDir
+	if root == "" {
+		home, _ := os.UserHomeDir()
+		root = filepath.Join(home, "bounty-data", "uploads")
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		h.writeError(w, "uploads dir: "+err.Error())
+		return
+	}
+	now := time.Now().Format("20060102-150405")
+	var paths []string
+	for i, fh := range files {
+		ext := strings.ToLower(filepath.Ext(fh.Filename))
+		if _, ok := uploadAllowedExt[ext]; !ok {
+			http.Error(w, "不支持的图片格式 "+ext+"（仅 png/jpeg/gif/webp）", 400)
+			return
+		}
+		if fh.Size > maxUploadBytes {
+			http.Error(w, fmt.Sprintf("图片 %s 超过 10MiB 上限", fh.Filename), 400)
+			return
+		}
+		src, err := fh.Open()
+		if err != nil {
+			h.writeError(w, "open upload: "+err.Error())
+			return
+		}
+		data, err := io.ReadAll(io.LimitReader(src, maxUploadBytes+1))
+		src.Close()
+		if err != nil {
+			h.writeError(w, "read upload: "+err.Error())
+			return
+		}
+		ct := http.DetectContentType(data)
+		if want := uploadAllowedExt[ext]; !strings.HasPrefix(ct, "image/") && ct != want {
+			// DetectContentType is a hint; reject non-image payloads.
+			if !strings.HasPrefix(ct, "image/") {
+				http.Error(w, "文件 "+fh.Filename+" 不是有效图片", 400)
+				return
+			}
+		}
+		name := fmt.Sprintf("%s-%d%s", now, i+1, ext)
+		dst := filepath.Join(root, name)
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			h.writeError(w, "save upload: "+err.Error())
+			return
+		}
+		paths = append(paths, dst)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		Status string   `json:"status"`
+		Paths  []string `json:"paths"`
+	}{"ok", paths})
 }
 
 // restoreAPI rolls the workspace files back to just before the given user
@@ -278,6 +407,9 @@ select { background: var(--bg); color: var(--cream); border: 1px solid var(--bor
 <main id="messages"></main>
 <footer>
   <textarea id="input" rows="1" placeholder="Type a message... (Enter to send, Shift+Enter for newline)" onkeydown="handleKey(event)"></textarea>
+  <button id="imgBtn" onclick="document.getElementById('imgInput').click()" title="上传图片（最多 4 张，png/jpeg/gif/webp ≤10MiB）">🖼</button>
+  <input id="imgInput" type="file" accept=".png,.jpg,.jpeg,.gif,.webp" multiple style="display:none" onchange="handleImages(event)">
+  <div id="imgPreview" style="display:flex;gap:6px;padding:4px 0;"></div>
   <button id="sendBtn" onclick="sendMessage()">Send</button>
 </footer>
 </div>
@@ -341,6 +473,7 @@ select { background: var(--bg); color: var(--cream); border: 1px solid var(--bor
 </div>
 <script>
 let turnCount = 0, tokCount = 0, toolCount = 0;
+let pendingImages = []; // {file, preview}
 const msgEl = document.getElementById('messages');
 const inputEl = document.getElementById('input');
 const sendBtn = document.getElementById('sendBtn');
@@ -427,26 +560,73 @@ function addMsg(kind, text) {
   return div;
 }
 
-function sendMessage() {
+function handleImages(e) {
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  for (const f of files) {
+    if (pendingImages.length >= 4) { addMsg('error', '最多 4 张图片'); break; }
+    if (f.size > 10*1024*1024) { addMsg('error', f.name + ' 超过 10MiB'); continue; }
+    pendingImages.push({file: f, preview: URL.createObjectURL(f)});
+  }
+  renderImgPreview();
+}
+
+function renderImgPreview() {
+  const el = document.getElementById('imgPreview');
+  el.innerHTML = '';
+  pendingImages.forEach((p, i) => {
+    const wrap = document.createElement('span');
+    wrap.style.position = 'relative';
+    const img = document.createElement('img');
+    img.src = p.preview;
+    img.style = 'height:48px;border-radius:4px;border:1px solid var(--border);';
+    const x = document.createElement('span');
+    x.textContent = '×';
+    x.style = 'position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border-radius:50%;width:16px;height:16px;font-size:11px;text-align:center;cursor:pointer;line-height:16px;';
+    x.onclick = () => { pendingImages.splice(i, 1); renderImgPreview(); };
+    wrap.appendChild(img); wrap.appendChild(x);
+    el.appendChild(wrap);
+  });
+}
+
+async function uploadImages(files) {
+  const fd = new FormData();
+  files.forEach(f => fd.append('images', f, f.name));
+  const r = await fetch('/chat/api/upload' + tokenParam, {method: 'POST', body: fd});
+  const d = await r.json();
+  if (!r.ok || d.status !== 'ok') throw new Error(d.error || ('upload HTTP ' + r.status));
+  return d.paths || [];
+}
+
+async function sendMessage() {
   if (sendBtn.disabled) return;
   const text = inputEl.value.trim();
-  if (!text) return;
-  addMsg('user', text);
+  const imgs = pendingImages.slice();
+  if (!text && imgs.length === 0) return;
+  addMsg('user', (text ? text : '') + (imgs.length ? ' 🖼×' + imgs.length : ''));
   inputEl.value = '';
+  pendingImages = [];
+  renderImgPreview();
   turnCount++;
   document.getElementById('turnCount').textContent = turnCount;
   sendBtn.disabled = true;
-
-  fetch('/chat/api/send' + tokenParam, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({message: text})
-  }).then(r => r.json()).then(data => {
+  try {
+    let paths = [];
+    if (imgs.length) paths = await uploadImages(imgs.map(p => p.file));
+    const body = {message: text};
+    if (paths.length) body.images = paths;
+    const r = await fetch('/chat/api/send' + tokenParam, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!r.ok || d.status !== 'ok') throw new Error(d.error || ('send HTTP ' + r.status));
+  } catch (err) {
+    addMsg('error', '发送失败: ' + err);
+  } finally {
     sendBtn.disabled = false;
-  }).catch(err => {
-    addMsg('error', 'Send failed: ' + err);
-    sendBtn.disabled = false;
-  });
+  }
 }
 
 function handleKey(e) {

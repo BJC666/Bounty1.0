@@ -1,0 +1,4 @@
+name = "docs-zh"
+version = "0.2.0"
+description = "中文技术文档写作助手子代理：README/接口文档/论文润色"
+permissions = ["read", "write"]

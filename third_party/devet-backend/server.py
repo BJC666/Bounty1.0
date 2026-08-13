@@ -33,5 +33,7 @@ def root():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8765)
+    # Allow tests/tools to override the port (default 8765).
+    port = int(os.environ.get("DEVET_PORT", "8765"))
+    uvicorn.run(app, host="127.0.0.1", port=port)
 

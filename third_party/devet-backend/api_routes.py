@@ -32,11 +32,37 @@ from veritrade.multi_agent_scenario import TradingDAOScenario
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
-# State: store the last-built chain in memory for verification
+# State: per-tenant chain storage (multi-tenant sharding).
+# Every stateful endpoint resolves its tenant from tenant_id (body or query,
+# default "default"); concurrent Bounty sessions no longer overwrite each
+# other's chains. GET /api/tenants lists live tenants, DELETE cleans them.
 # ---------------------------------------------------------------------------
-_scenario: Optional[TradingDAOScenario] = None
-_chain: Optional[DelegationExecutionChain] = None
-_aid_registry: dict = {}
+_TENANTS: dict = {}
+
+
+def _tenant_id(req) -> str:
+    tid = None
+    if isinstance(req, dict):
+        tid = req.get("tenant_id")
+    if not tid:
+        tid = "default"
+    return str(tid)[:128]
+
+
+def _state(req) -> dict:
+    tid = _tenant_id(req)
+    st = _TENANTS.get(tid)
+    if st is None:
+        st = {
+            "scenario": None,
+            "chain": None,
+            "root_aid": None,
+            "aid_registry": {},
+            "updated_at": time.time(),
+        }
+        _TENANTS[tid] = st
+    st["updated_at"] = time.time()
+    return st
 
 # ---------------------------------------------------------------------------
 # Attack definitions
@@ -340,19 +366,25 @@ def health():
 
 
 @router.post("/scenario/build")
-def build_scenario():
-    """Build a 3-agent Trading DAO delegation chain and store in memory."""
-    global _scenario, _chain, _aid_registry
-
-    _scenario = TradingDAOScenario()
+def build_scenario(req: dict = None):
+    """Build a 3-agent Trading DAO delegation chain and store it under the
+    request's tenant (body tenant_id or query tenant_id, default "default")."""
+    st = _state(req)
+    scenario = TradingDAOScenario()
+    root_aid = scenario.strategy_aid
     t0 = time.perf_counter()
-    _chain, _aid_registry = _scenario.build()
+    chain, aid_registry = scenario.build()
     build_elapsed_ms = round((time.perf_counter() - t0) * 1000, 3)
+    st["scenario"] = scenario
+    st["root_aid"] = root_aid
+    st["chain"] = chain
+    st["aid_registry"] = aid_registry
 
     return {
         "status": "built",
+        "tenant_id": _tenant_id(req),
         "build_elapsed_ms": build_elapsed_ms,
-        "chain": _serialize_chain(_chain),
+        "chain": _serialize_chain(chain),
         "aid_registry": [
             {
                 "agent_name": aid.agent_name,
@@ -361,26 +393,31 @@ def build_scenario():
                 "injection_algorithm_uid": aid.core.injection_algorithm_uid,
                 "parsing_algorithm_uid": aid.core.parsing_algorithm_uid,
             }
-            for aid in _aid_registry.values()
+            for aid in aid_registry.values()
         ],
     }
 
 
 @router.post("/chain/verify")
-def verify_chain():
-    """Verify the currently stored delegation chain."""
-    global _scenario, _chain, _aid_registry
+def verify_chain(req: dict = None):
+    """Verify the chain stored under the request's tenant."""
+    st = _state(req)
+    chain = st["chain"]
+    root_aid = st["root_aid"]
+    if chain is None or root_aid is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No chain built. Call /api/scenario/build or /api/chain/mirror first.",
+        )
 
-    if _chain is None or _scenario is None:
-        raise HTTPException(status_code=400, detail="No chain built. Call /api/scenario/build first.")
-
-    verifier = DelegationVerifier(root_aid=_scenario.strategy_aid)
+    verifier = DelegationVerifier(root_aid=root_aid)
     t0 = time.perf_counter()
-    result = verifier.verify_chain(_chain, _aid_registry)
+    result = verifier.verify_chain(chain, st["aid_registry"])
     verify_elapsed_ms = round((time.perf_counter() - t0) * 1000, 3)
 
     return {
         "status": "verified",
+        "tenant_id": _tenant_id(req),
         "verify_elapsed_ms": verify_elapsed_ms,
         "result": _serialize_result(result),
     }
@@ -552,14 +589,171 @@ def simulate_all_attacks():
         "rows": rows,
     }
 
+@router.post("/chain/mirror")
+def mirror_chain(req: dict):
+    """Mirror Bounty's real sub-agent delegation as a DeVET chain.
+
+    Body:
+      {"host_name": "...", "host_endpoint": "...",
+       "agents": [{"name","endpoint","model","result_commitment","tool_calls"}]}
+
+    Each delegate becomes a sealed DelegationGrant + CompositeProof whose
+    commitment binds the sub-agent result. Verification afterwards covers the
+    real 7-check recursion (grant seal, expiry, policy, AID binding, proof).
+    """
+    st = _state(req)
+
+    host_name = str(req.get("host_name") or "bounty-host")[:64]
+    host_endpoint = str(req.get("host_endpoint") or "bounty.local")[:128]
+    agents = req.get("agents")
+    if not isinstance(agents, list) or not agents:
+        raise HTTPException(status_code=400, detail="agents must be a non-empty list")
+    if len(agents) > 64:
+        raise HTTPException(status_code=400, detail="too many agents (max 64)")
+
+    host_aid = _make_aid(name=host_name, endpoint=host_endpoint)
+    t0 = time.time()
+    mirror_commit = "sha256:" + hashlib.sha256(
+        json.dumps({"host": host_name, "agents": len(agents)}, sort_keys=True).encode()
+    ).hexdigest()
+    root_chain = ExecutionChain(chain_id=host_aid.agent_hash)
+    root_chain.append(ChainedStep(
+        step_index=0, timestamp=t0, prev_hash=None,
+        notary_commitments=[mirror_commit],
+    ))
+
+    tree = []
+    registry = {host_aid.agent_hash: host_aid}
+    for i, a in enumerate(agents):
+        name = str(a.get("name") or f"subagent-{i}")[:64]
+        endpoint = str(a.get("endpoint") or "bounty.subagent")[:128]
+        model = str(a.get("model") or "default")[:64]
+        commitment = str(a.get("result_commitment") or hashlib.sha256(b"").hexdigest())[:128]
+        tool_calls = int(a.get("tool_calls") or 0)
+        if tool_calls < 0:
+            tool_calls = 0
+
+        delegate_aid = _make_aid(name=name, endpoint=endpoint)
+        registry[delegate_aid.agent_hash] = delegate_aid
+
+        policy = DelegationPolicy(
+            allowed_endpoints=[endpoint],
+            allowed_models=[model],
+            valid_until=time.time() + 86400,
+            max_delegation_depth=0,
+            max_api_calls=tool_calls + 1,
+        )
+        grant = DelegationGrant(
+            delegator_aid_hash=host_aid.agent_hash,
+            delegatee_aid_hash=delegate_aid.agent_hash,
+            policy=policy,
+            issuance_timestamp=t0,
+            notary_attestation_ref=mirror_commit,
+        ).seal()
+
+        core_proof = _make_webproof(server=endpoint, seed=f"bounty:{commitment}")
+        step = ExecutionStep(
+            core=CoreStepRecord(
+                request=f"bounty mirror delegate {i}",
+                response=commitment,
+                proof=core_proof,
+            ),
+            tools=[
+                ToolCallRecord(
+                    tool_name=f"tool-{j}",
+                    request="",
+                    response="",
+                    proof=_make_webproof(server=endpoint, seed=f"bounty:{commitment}:t{j}"),
+                )
+                for j in range(tool_calls)
+            ],
+        )
+        tree.append(DelegationExecutionStep(
+            grant=grant,
+            agent_proof=CompositeProof(aid_hash=delegate_aid.agent_hash, steps=[step]),
+        ))
+
+    chain = DelegationExecutionChain(
+        root_aid_hash=host_aid.agent_hash,
+        root_chain=root_chain,
+        delegation_tree=tree,
+    )
+    st["chain"] = chain
+    st["aid_registry"] = registry
+    st["root_aid"] = host_aid
+    st["scenario"] = None
+
+    return {
+        "status": "mirrored",
+        "tenant_id": _tenant_id(req),
+        "chain": _serialize_chain(chain),
+        "aid_registry": [
+            {
+                "agent_name": aid.agent_name,
+                "agent_hash": aid.agent_hash,
+                "endpoint": aid.core.endpoint,
+            }
+            for aid in registry.values()
+        ],
+    }
+
+
+@router.post("/chain/tamper")
+def tamper_chain(req: dict):
+    """Simulate a result forgery on the mirrored chain: replace one delegate's
+    proof with a forged AID/proof, then re-verify for blame attribution.
+
+    Body: {"delegate_index": 0, "commitment": "forged-commitment-string"}
+    """
+    st = _state(req)
+    chain = st["chain"]
+    root_aid = st["root_aid"]
+    aid_registry = st["aid_registry"]
+    if chain is None or root_aid is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No mirrored chain. Call /api/chain/mirror first.",
+        )
+
+    idx = int(req.get("delegate_index") or 0)
+    if idx < 0 or idx >= len(chain.delegation_tree):
+        raise HTTPException(
+            status_code=400,
+            detail=f"delegate_index out of range (0..{len(chain.delegation_tree) - 1})",
+        )
+
+    commitment = str(req.get("commitment") or hashlib.sha256(b"forged").hexdigest())[:128]
+    forged_aid = _make_aid(name="ForgedAgent", endpoint="api.evil.com")
+    aid_registry[forged_aid.agent_hash] = forged_aid
+
+    step = chain.delegation_tree[idx]
+    forged_proof = _make_webproof(server="api.evil.com", seed=f"forged:{commitment}")
+    step.agent_proof = CompositeProof(
+        aid_hash=forged_aid.agent_hash,
+        steps=[ExecutionStep(core=CoreStepRecord(
+            request="forged sub-result", response=commitment, proof=forged_proof,
+        ))],
+    )
+
+    verifier = DelegationVerifier(root_aid=root_aid)
+    t0 = time.perf_counter()
+    result = verifier.verify_chain(chain, aid_registry)
+    verify_elapsed_ms = round((time.perf_counter() - t0) * 1000, 3)
+
+    return {
+        "status": "tampered",
+        "tenant_id": _tenant_id(req),
+        "verify_elapsed_ms": verify_elapsed_ms,
+        "result": _serialize_result(result),
+    }
+
+
 @router.post("/benchmark/verify")
 def benchmark_verify(req: dict = None):
     """Run verification latency benchmark.
 
     Request body (optional): {"runs": 50}
     """
-    global _scenario, _chain, _aid_registry
-
     runs = (req or {}).get("runs", 50)
 
     scenario = TradingDAOScenario()
@@ -601,3 +795,31 @@ def benchmark_verify(req: dict = None):
             "grant_count": len(chain.collect_all_grants()),
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Multi-tenant administration
+# ---------------------------------------------------------------------------
+
+@router.get("/tenants")
+def list_tenants():
+    """List live tenants and their stored chain sizes (for observability and
+    cleanup of stale Bounty sessions)."""
+    rows = []
+    for tid, st in _TENANTS.items():
+        chain = st["chain"]
+        rows.append({
+            "tenant_id": tid,
+            "has_chain": chain is not None,
+            "agents": chain.total_agents if chain is not None else 0,
+            "updated_at": round(st["updated_at"], 3),
+        })
+    rows.sort(key=lambda r: r["tenant_id"])
+    return {"tenants": rows}
+
+
+@router.delete("/tenants/{tenant_id}")
+def delete_tenant(tenant_id: str):
+    """Drop all state for a tenant (session cleanup)."""
+    existed = _TENANTS.pop(tenant_id, None) is not None
+    return {"status": "deleted", "tenant_id": tenant_id, "existed": existed}

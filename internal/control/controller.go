@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"bounty/internal/agent"
@@ -78,11 +79,36 @@ func (c *Controller) SendWithImages(ctx context.Context, text string, images []p
 	}
 
 	input := c.compose(text)
+	input = c.injectSkillTriggers(input)
 	c.mu.Unlock()
 	if len(images) == 0 {
 		return c.runner.Run(ctx, input)
 	}
 	return c.runner.RunWithImages(ctx, input, images)
+}
+
+// injectSkillTriggers prepends the bodies of skills whose trigger keywords
+// match the composed input. Skills act as instruction sets (e.g. a code
+// review checklist); auto-injection makes them effective without the model
+// having to explicitly load them.
+func (c *Controller) injectSkillTriggers(input string) string {
+	if c.skills == nil {
+		return input
+	}
+	hits := c.skills.Match(input)
+	if len(hits) == 0 {
+		return input
+	}
+	var sb strings.Builder
+	sb.WriteString(`## Activated Skills
+以下技能与本次请求匹配，请严格按其规范执行：
+`)
+	for _, sk := range hits {
+		sb.WriteString("\n### Skill: " + sk.Name + "\n" + strings.TrimSpace(sk.Body) + "\n")
+	}
+	sb.WriteString(`---
+`)
+	return sb.String() + input
 }
 
 // compose builds the final input string by layering plan mode, goal text, and

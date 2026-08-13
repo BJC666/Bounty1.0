@@ -86,6 +86,61 @@ func (s *Store) Disable(names []string) {
 }
 
 // Count returns the number of enabled skills in the index.
+
+// maxTriggerInject caps how many skill bodies are injected into one turn.
+// More than two matched skills would drown the model context; the system
+// prompt index still lists everything.
+const maxTriggerInject = 2
+
+// Match returns the enabled skills whose trigger keywords appear in the
+// user text (case-insensitive substring match), ranked by the position of
+// the earliest matching trigger so the most relevant skill is injected
+// first, then capped. Used by the controller for trigger-to-injection.
+func (s *Store) Match(text string) []*Skill {
+	if len(s.enabled) == 0 || text == "" {
+		return nil
+	}
+	lower := strings.ToLower(text)
+	type hit struct {
+		skill *Skill
+		pos   int
+	}
+	var hits []hit
+	for _, sk := range s.enabled {
+		best := -1
+		for _, trig := range sk.Triggers {
+			if trig == "" {
+				continue
+			}
+			if pos := strings.Index(lower, strings.ToLower(trig)); pos >= 0 {
+				if best < 0 || pos < best {
+					best = pos
+				}
+			}
+		}
+		if best >= 0 {
+			hits = append(hits, hit{skill: sk, pos: best})
+		}
+	}
+	if len(hits) == 0 {
+		return nil
+	}
+	// stable sort by trigger position
+	for i := 1; i < len(hits); i++ {
+		for j := i; j > 0 && hits[j].pos < hits[j-1].pos; j-- {
+			hits[j], hits[j-1] = hits[j-1], hits[j]
+		}
+	}
+	out := make([]*Skill, 0, maxTriggerInject)
+	for i, h := range hits {
+		if i >= maxTriggerInject {
+			break
+		}
+		out = append(out, h.skill)
+	}
+	return out
+}
+
 func (s *Store) Count() int { return len(s.enabled) }
 
 func (s *Store) Index() []IndexEntry {

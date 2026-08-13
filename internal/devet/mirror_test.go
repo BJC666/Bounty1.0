@@ -14,6 +14,7 @@ type fakeDeVET struct {
 	server   *httptest.Server
 	agents   []MirrorAgent
 	host     string
+	tenant   string
 	tampered bool
 }
 
@@ -27,6 +28,7 @@ func newFakeDeVET(t *testing.T) *fakeDeVET {
 			http.Error(w, err.Error(), 400)
 			return
 		}
+		f.tenant = spec.TenantID
 		f.host = spec.HostName
 		f.agents = spec.Agents
 		json.NewEncoder(w).Encode(map[string]any{
@@ -87,9 +89,29 @@ func spec() MirrorSpec {
 	}
 }
 
+func TestTenantPropagation(t *testing.T) {
+	f := newFakeDeVET(t)
+	client := NewMirrorClient(&Backend{baseURL: f.server.URL + "/api"}, "session-42")
+	if _, err := client.MirrorAndVerify(context.Background(), spec()); err != nil {
+		t.Fatalf("MirrorAndVerify: %v", err)
+	}
+	if f.tenant != "session-42" {
+		t.Fatalf("tenant = %q, want session-42", f.tenant)
+	}
+	// empty tenant id keeps the backend default tenant
+	f2 := newFakeDeVET(t)
+	client2 := NewMirrorClient(&Backend{baseURL: f2.server.URL + "/api"}, "")
+	if _, err := client2.MirrorAndVerify(context.Background(), spec()); err != nil {
+		t.Fatalf("MirrorAndVerify: %v", err)
+	}
+	if f2.tenant != "" {
+		t.Fatalf("tenant = %q, want empty", f2.tenant)
+	}
+}
+
 func TestMirrorAndVerifyHappyPath(t *testing.T) {
 	f := newFakeDeVET(t)
-	client := NewMirrorClient(&Backend{baseURL: f.server.URL + "/api"})
+	client := NewMirrorClient(&Backend{baseURL: f.server.URL + "/api"}, "test-session")
 
 	detail, err := client.MirrorAndVerify(context.Background(), spec())
 	if err != nil {
@@ -115,7 +137,7 @@ func TestMirrorAndVerifyHappyPath(t *testing.T) {
 
 func TestTamperBlameAttribution(t *testing.T) {
 	f := newFakeDeVET(t)
-	client := NewMirrorClient(&Backend{baseURL: f.server.URL + "/api"})
+	client := NewMirrorClient(&Backend{baseURL: f.server.URL + "/api"}, "test-session")
 	if _, err := client.MirrorAndVerify(context.Background(), spec()); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +162,7 @@ func TestTamperBlameAttribution(t *testing.T) {
 
 func TestStateReturnsCopy(t *testing.T) {
 	f := newFakeDeVET(t)
-	client := NewMirrorClient(&Backend{baseURL: f.server.URL + "/api"})
+	client := NewMirrorClient(&Backend{baseURL: f.server.URL + "/api"}, "test-session")
 	if _, err := client.MirrorAndVerify(context.Background(), spec()); err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +180,7 @@ func TestMirrorBackendErrorRecordsState(t *testing.T) {
 		http.Error(w, "backend down", 503)
 	}))
 	defer server.Close()
-	client := NewMirrorClient(&Backend{baseURL: server.URL + "/api"})
+	client := NewMirrorClient(&Backend{baseURL: server.URL + "/api"}, "test-session")
 	_, err := client.MirrorAndVerify(context.Background(), spec())
 	if err == nil || !strings.Contains(err.Error(), "503") {
 		t.Fatalf("expected HTTP 503 error, got %v", err)

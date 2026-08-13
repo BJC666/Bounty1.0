@@ -141,7 +141,9 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	// latest snapshot for the web chain-visualisation panel.
 	var devetMirror *devet.MirrorClient
 	if devetBackend != nil {
-		devetMirror = devet.NewMirrorClient(devetBackend)
+		// Multi-tenant: every Bounty session gets its own DeVET tenant so
+		// concurrent sessions do not overwrite each other's chains.
+		devetMirror = devet.NewMirrorClient(devetBackend, opts.SessionID)
 	}
 	reg.Add(builtin.NewRepoMapTool(repoMapMgr))
 
@@ -208,19 +210,20 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	// 7a-2. Learning graph — tracks relationships between skills, tools, and memory
 	learningGraph := agent.NewLearningGraph(dataDir())
 
-	// 7b. Load commands
+	// 7b. Load commands — project/user dirs plus plugins installed from the
+	// marketplace (~/bounty-data/plugins/<name>/commands).
 	cmdStore := plugin.NewCommandStore()
-	cmdStore.Discover([]string{
+	cmdStore.Discover(append(pluginDirs(dataDir(), "commands"), []string{
 		filepath.Join(cfg.Sandbox.WorkspaceRoot, ".bounty", "commands"),
 		filepath.Join(dataDir(), "commands"),
-	})
+	}...))
 
-	// 7c. Load agent definitions
+	// 7c. Load agent definitions — same marketplace plugin dirs.
 	agentStore := plugin.NewAgentStore()
-	agentStore.Discover([]string{
+	agentStore.Discover(append(pluginDirs(dataDir(), "agents"), []string{
 		filepath.Join(cfg.Sandbox.WorkspaceRoot, ".bounty", "agents"),
 		filepath.Join(dataDir(), "agents"),
-	})
+	}...))
 
 	// 8. Build system prompt (repo map appended separately so the agent can
 	// refresh it per turn without rebuilding the static base).
@@ -579,6 +582,29 @@ func parseModel(full string) (provider, model string) {
 }
 
 // dataDir returns the platform-standard data directory for Bounty.
+// pluginDirs returns <dataDir>/plugins/<name>/<sub> for every installed
+// plugin directory that carries a plugin.toml manifest. Marketplace-installed
+// plugins contribute commands/ and agents/ this way.
+func pluginDirs(dataRoot, sub string) []string {
+	root := filepath.Join(dataRoot, "plugins")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pluginRoot := filepath.Join(root, e.Name())
+		if _, err := os.Stat(filepath.Join(pluginRoot, "plugin.toml")); err != nil {
+			continue
+		}
+		out = append(out, filepath.Join(pluginRoot, sub))
+	}
+	return out
+}
+
 func dataDir() string {
 	if dir := os.Getenv("BOUNTY_HOME"); dir != "" {
 		return dir

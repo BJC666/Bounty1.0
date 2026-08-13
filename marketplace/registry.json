@@ -1,0 +1,18 @@
+[
+  {
+    "name": "docs-zh",
+    "version": "0.2.0",
+    "description": "中文技术文档写作助手子代理：README/接口文档/论文润色",
+    "author": "BJC666",
+    "download": "https://raw.githubusercontent.com/BJC666/Bounty1.0/main/marketplace/plugins/docs-zh.zip",
+    "sha256": "e5c5f110e23e2320925d91cf8133f2f31acbf43412d83f03da269ff27b6e31a8"
+  },
+  {
+    "name": "security-review",
+    "version": "1.0.0",
+    "description": "代码安全评审清单：注入/越权/密钥泄露/危险命令扫描",
+    "author": "BJC666",
+    "download": "https://raw.githubusercontent.com/BJC666/Bounty1.0/main/marketplace/plugins/security-review.zip",
+    "sha256": "8484284f2659821c43baeaa8b2ff8181766426ba340589b1e1811677a787e934"
+  }
+]

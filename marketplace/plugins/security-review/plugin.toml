@@ -1,0 +1,4 @@
+name = "security-review"
+version = "1.0.0"
+description = "代码安全评审清单：注入/越权/密钥泄露/危险命令扫描"
+permissions = ["read"]

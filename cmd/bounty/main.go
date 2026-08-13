@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"bounty/internal/config"
 	"bounty/internal/event"
 	"bounty/internal/permission"
+	"bounty/internal/plugin"
 	"bounty/internal/provider"
 	"bounty/internal/remote"
 	"bounty/internal/repair"
@@ -46,6 +48,8 @@ func main() {
 		dashboardCmd()
 	case "remote":
 		remoteCmd()
+	case "plugin":
+		pluginCmd()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
 		os.Exit(1)
@@ -312,6 +316,89 @@ func doctorCmd() {
 	fmt.Printf("   Tools: 20 total (12 builtin + 5 DeVET + 3 subagent)\n")
 }
 
+const pluginUsage = `Bounty Plugin Marketplace
+
+用法:
+  bounty plugin search <关键词>       在插件市场搜索（名称/描述/作者）
+  bounty plugin install <名称>        下载并安装插件（sha256 校验 + 防 zip-slip）
+  bounty plugin list                 列出本地已安装插件
+
+注册表:
+  默认 "BOUNTY_PLUGIN_REGISTRY" 或 --registry 指定 JSON 注册表地址
+  安装目录: ~/bounty-data/plugins/<名称>
+`
+
+func pluginCmd() {
+	if len(os.Args) < 3 || os.Args[2] == "--help" || os.Args[2] == "-h" {
+		fmt.Print(pluginUsage)
+		return
+	}
+	ctx := context.Background()
+	registryURL := plugin.DefaultRegistryURL
+	for i, a := range os.Args {
+		if a == "--registry" && i+1 < len(os.Args) {
+			registryURL = os.Args[i+1]
+		}
+	}
+	home, _ := os.UserHomeDir()
+	destRoot := filepath.Join(home, "bounty-data", "plugins")
+
+	switch os.Args[2] {
+	case "search":
+		if len(os.Args) < 4 {
+			fmt.Fprintln(os.Stderr, "用法: bounty plugin search <关键词>")
+			os.Exit(1)
+		}
+		entries, err := plugin.FetchIndex(ctx, registryURL)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "❌", err)
+			os.Exit(1)
+		}
+		results := plugin.Search(entries, os.Args[3])
+		if len(results) == 0 {
+			fmt.Println("未找到匹配插件")
+			return
+		}
+		for _, e := range results {
+			fmt.Printf("- %s v%s — %s (作者: %s)\n", e.Name, e.Version, e.Description, e.Author)
+		}
+	case "install":
+		if len(os.Args) < 4 {
+			fmt.Fprintln(os.Stderr, "用法: bounty plugin install <名称>")
+			os.Exit(1)
+		}
+		entries, err := plugin.FetchIndex(ctx, registryURL)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "❌", err)
+			os.Exit(1)
+		}
+		entry, ok := plugin.Find(entries, os.Args[3])
+		if !ok {
+			fmt.Fprintf(os.Stderr, "❌ 插件 %q 不在注册表\n", os.Args[3])
+			os.Exit(1)
+		}
+		dest, err := plugin.Install(ctx, entry, destRoot)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ 安装失败: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✅ 已安装 %s v%s → %s（重启会话后生效）\n", entry.Name, entry.Version, dest)
+	case "list":
+		installed := plugin.Installed(destRoot)
+		if len(installed) == 0 {
+			fmt.Println("本地暂无已安装插件")
+			return
+		}
+		fmt.Println("已安装插件:")
+		for _, name := range installed {
+			fmt.Printf("- %s\n", name)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "未知子命令: %s\n", os.Args[2])
+		os.Exit(1)
+	}
+}
+
 func dashboardCmd() {
 	wd, _ := os.Getwd()
 	cfg, err := repair.SafeLoad(wd)
@@ -337,6 +424,9 @@ func dashboardCmd() {
 	restorer := ctrl.CheckpointRestorer()
 	chatHandler := &serve.ChatHandler{
 		SendFn: func(text string) error { return ctrl.Send(context.Background(), text) },
+		SendImagesFn: func(text string, images []provider.ImagePart) error {
+			return ctrl.SendWithImages(context.Background(), text, images)
+		},
 		SwitchFn: func(req serve.ModelSwitchRequest) error {
 			kind := req.Kind
 			if kind == "" {

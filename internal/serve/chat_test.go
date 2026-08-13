@@ -2,16 +2,124 @@ package serve
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"bounty/internal/checkpoint"
 	"bounty/internal/devet"
+	"bounty/internal/provider"
 )
+
+// tinyPNG is a 1x1 red pixel PNG (valid signature for DetectContentType).
+const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+func TestUploadEndpoint(t *testing.T) {
+	pngData, err := decodeBase64(tinyPNG)
+	if err != nil {
+		t.Fatalf("decode png: %v", err)
+	}
+	h := &ChatHandler{UploadDir: t.TempDir()}
+
+	// valid upload
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("images", "shot.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fw.Write(pngData)
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/chat/api/upload", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Status string   `json:"status"`
+		Paths  []string `json:"paths"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status != "ok" || len(resp.Paths) != 1 {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if _, err := os.Stat(resp.Paths[0]); err != nil {
+		t.Fatalf("saved file missing: %v", err)
+	}
+
+	// bad extension rejected
+	var buf2 bytes.Buffer
+	mw2 := multipart.NewWriter(&buf2)
+	fw2, _ := mw2.CreateFormFile("images", "evil.exe")
+	fw2.Write(pngData)
+	mw2.Close()
+	req2 := httptest.NewRequest(http.MethodPost, "/chat/api/upload", &buf2)
+	req2.Header.Set("Content-Type", mw2.FormDataContentType())
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("bad ext status = %d", rec2.Code)
+	}
+}
+
+func TestSendWithImagesEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	pngPath := filepath.Join(dir, "shot.png")
+	pngData, _ := decodeBase64(tinyPNG)
+	if err := os.WriteFile(pngPath, pngData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotText string
+	var gotParts []provider.ImagePart
+	h := &ChatHandler{
+		SendFn: func(text string) error { return nil },
+		SendImagesFn: func(text string, images []provider.ImagePart) error {
+			gotText = text
+			gotParts = images
+			return nil
+		},
+	}
+	body := `{"message":"看看这张图","images":["` + strings.ReplaceAll(pngPath, "\\", "\\\\") + `"]}`
+	req := httptest.NewRequest(http.MethodPost, "/chat/api/send", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if gotText != "看看这张图" {
+		t.Fatalf("text = %q", gotText)
+	}
+	if len(gotParts) != 1 || gotParts[0].MediaType != "image/png" {
+		t.Fatalf("parts = %+v", gotParts)
+	}
+
+	// SendImagesFn nil -> 501
+	h2 := &ChatHandler{SendFn: func(text string) error { return nil }}
+	req2 := httptest.NewRequest(http.MethodPost, "/chat/api/send", bytes.NewBufferString(`{"message":"x","images":["`+strings.ReplaceAll(pngPath, "\\", "\\\\")+`"]}`))
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	h2.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusNotImplemented {
+		t.Fatalf("nil SendImagesFn status = %d", rec2.Code)
+	}
+}
+
+func decodeBase64(s string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(s)
+}
 
 func TestModelSwitchEndpoint(t *testing.T) {
 	cases := []struct {
