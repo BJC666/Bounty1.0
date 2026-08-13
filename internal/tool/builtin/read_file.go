@@ -5,12 +5,62 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
 	"bounty/internal/tool"
 )
 
+
+
+// pathHints searches for same-basename files near the requested path and
+// returns a short "did you mean" appendix, so a wrong-path read degrades into
+// a useful hint instead of a dead end (the dominant tool failure in Eval).
+func pathHints(requested string) string {
+	base := strings.ToLower(filepath.Base(requested))
+	if base == "" || base == "." || base == "/" {
+		return ""
+	}
+	// Walk from the nearest existing ancestor (usually the workspace root).
+	dir := filepath.Dir(requested)
+	for {
+		if _, err := os.Stat(dir); err == nil {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+	var candidates []string
+	visited := 0
+	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		visited++
+		if visited > 4000 {
+			return filepath.SkipAll
+		}
+		name := d.Name()
+		if d.IsDir() {
+			if name == ".git" || name == "node_modules" || name == "__pycache__" || name == ".venv" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(name, base) && len(candidates) < 5 {
+			candidates = append(candidates, path)
+		}
+		return nil
+	})
+	if len(candidates) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" 疑似目标文件：%s。可先 glob 确认后再读。", strings.Join(candidates, "；"))
+}
 // defaultReadMaxLines caps read_file output unless the caller passes an
 // explicit limit, so a huge file cannot flood the context.
 const defaultReadMaxLines = 2000
@@ -37,7 +87,7 @@ func (ReadFileTool) Execute(ctx context.Context, args json.RawMessage) (string, 
 	}
 	data, err := os.ReadFile(params.FilePath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w%s", err, pathHints(params.FilePath))
 	}
 	if !utf8.Valid(data) {
 		return "[binary file]", nil

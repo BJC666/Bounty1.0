@@ -47,9 +47,11 @@ func (GrepTool) Execute(ctx context.Context, args json.RawMessage) (string, erro
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
 			return "No matches found.", nil
 		}
-		// If rg not found, fall back to Go native regex
-		if _, ok := err.(*exec.Error); ok {
-			return grepFallback(params)
+		// rg is a nice-to-have: whenever it fails to produce results (missing
+		// binary, broken PATH stub, permission denied), fall back to the Go
+		// native implementation instead of failing the whole tool call.
+		if fb, fbErr := grepFallback(params); fbErr == nil {
+			return fb, nil
 		}
 		return string(output), fmt.Errorf("grep failed: %w", err)
 	}

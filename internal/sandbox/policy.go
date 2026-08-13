@@ -54,6 +54,14 @@ func (p *Policy) Check(command string) error {
 	}
 
 	for _, target := range redirectionTargets(command) {
+		// Windows null device: `> nul` discards output — harmless, not a
+		// filesystem write. Whitelisted so sandbox false-positives do not
+		// poison legitimate command idioms.
+		if strings.EqualFold(strings.Trim(target, `"`), "nul") ||
+			strings.EqualFold(strings.Trim(target, `"`), `\.
+ul`) {
+			continue
+		}
 		abs, ok := absolutePathLocal(target)
 		if !ok {
 			continue

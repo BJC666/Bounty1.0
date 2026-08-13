@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -165,5 +166,36 @@ func TestGrepFallbackCap(t *testing.T) {
 	}
 	if strings.Contains(out, "needle399") {
 		t.Error("fallback must cap")
+	}
+}
+
+// TestGrepToolFallsBackOnLaunchFailure verifies that a broken rg in PATH
+// (exit code != 1, e.g. a permission/launch failure) degrades to the native
+// fallback instead of failing the tool call.
+func TestGrepToolFallsBackOnLaunchFailure(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("needle-here\nother\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// A fake rg that exits 2 (not "no matches") — the previous code treated
+	// every non-ExitError-1 failure as fatal.
+	fakeBin := filepath.Join(t.TempDir(), "rg")
+	if runtime.GOOS == "windows" {
+		fakeBin += ".bat"
+	}
+	if err := os.WriteFile(fakeBin, []byte("@echo off\nexit /b 2\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := os.Getenv("PATH")
+	os.Setenv("PATH", filepath.Dir(fakeBin)+string(os.PathListSeparator)+oldPath)
+	defer os.Setenv("PATH", oldPath)
+
+	tool := GrepTool{}
+	out, err := tool.Execute(context.Background(), json.RawMessage(`{"pattern":"needle","path":"`+filepath.ToSlash(dir)+`"}`))
+	if err != nil {
+		t.Fatalf("grep failed instead of falling back: %v", err)
+	}
+	if !strings.Contains(out, "needle-here") {
+		t.Fatalf("fallback output missing match: %q", out)
 	}
 }
