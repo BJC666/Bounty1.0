@@ -257,11 +257,21 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	})
 	var ckpt agent.Checkpointer
 	if opts.SessionID != "" {
-		ckptStore, err := checkpoint.New(filepath.Join(dataDir(), "checkpoints", opts.SessionID))
+		ckptDir := filepath.Join(dataDir(), "checkpoints", opts.SessionID)
+		// P3-3: prefer the git shadow repo (full-tree snapshot per user
+		// message, tag msg-<N>); fall back to the legacy file snapshots when
+		// git is missing or the workspace root is unusable.
+		gitStore, err := checkpoint.NewGit(workspaceRootFor(cfg), ckptDir)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: checkpoints unavailable: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: git checkpoints unavailable (%v); falling back to file snapshots\n", err)
+			ckptStore, err2 := checkpoint.New(ckptDir)
+			if err2 != nil {
+				fmt.Fprintf(os.Stderr, "Warning: checkpoints unavailable: %v\n", err2)
+			} else {
+				ckpt = ckptStore
+			}
 		} else {
-			ckpt = ckptStore
+			ckpt = gitStore
 		}
 	}
 	todoSum := &todoSummary{}
@@ -340,6 +350,9 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 
 	// 15. Create Controller
 	ctrl := control.New(ag, fanout, st, hookRunner, permGate, skillStore, cmdStore, agentStore, opts.SessionID)
+	if r, ok := ckpt.(checkpoint.Restorer); ok {
+		ctrl.SetCheckpointRestorer(r)
+	}
 	return ctrl, nil
 }
 

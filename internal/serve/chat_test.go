@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"bounty/internal/checkpoint"
 )
 
 func TestModelSwitchEndpoint(t *testing.T) {
@@ -80,4 +82,94 @@ func TestChatSendEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestCheckpointListEndpoint(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		h := &ChatHandler{CheckpointListFn: func() ([]checkpoint.Info, error) {
+			return []checkpoint.Info{{MsgIndex: 0, Prompt: "first"}, {MsgIndex: 1, Prompt: "second"}}, nil
+		}}
+		req := httptest.NewRequest(http.MethodGet, "/chat/api/checkpoints", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Status      string            `json:"status"`
+			Checkpoints []checkpoint.Info `json:"checkpoints"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("bad json: %v", err)
+		}
+		if resp.Status != "ok" || len(resp.Checkpoints) != 2 || resp.Checkpoints[0].MsgIndex != 0 {
+			t.Fatalf("resp = %+v", resp)
+		}
+	})
+	t.Run("list error", func(t *testing.T) {
+		h := &ChatHandler{CheckpointListFn: func() ([]checkpoint.Info, error) {
+			return nil, errors.New("boom")
+		}}
+		req := httptest.NewRequest(http.MethodGet, "/chat/api/checkpoints", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", rec.Code)
+		}
+	})
+	t.Run("unavailable", func(t *testing.T) {
+		h := &ChatHandler{}
+		req := httptest.NewRequest(http.MethodGet, "/chat/api/checkpoints", nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotImplemented {
+			t.Fatalf("status = %d, want 501", rec.Code)
+		}
+	})
+}
+
+func TestCheckpointRestoreEndpoint(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		var got int = -1
+		h := &ChatHandler{CheckpointRestoreFn: func(i int) error { got = i; return nil }}
+		req := httptest.NewRequest(http.MethodPost, "/chat/api/checkpoints/restore", bytes.NewBufferString(`{"msg_index":3}`))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+		}
+		if got != 3 {
+			t.Fatalf("restore called with %d, want 3", got)
+		}
+	})
+	t.Run("missing msg_index", func(t *testing.T) {
+		h := &ChatHandler{CheckpointRestoreFn: func(i int) error { return nil }}
+		req := httptest.NewRequest(http.MethodPost, "/chat/api/checkpoints/restore", bytes.NewBufferString(`{}`))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", rec.Code)
+		}
+	})
+	t.Run("restore error", func(t *testing.T) {
+		h := &ChatHandler{CheckpointRestoreFn: func(i int) error { return errors.New("msg-9 missing") }}
+		req := httptest.NewRequest(http.MethodPost, "/chat/api/checkpoints/restore", bytes.NewBufferString(`{"msg_index":9}`))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), "msg-9 missing") {
+			t.Fatalf("body = %s", rec.Body.String())
+		}
+	})
+	t.Run("unavailable", func(t *testing.T) {
+		h := &ChatHandler{}
+		req := httptest.NewRequest(http.MethodPost, "/chat/api/checkpoints/restore", bytes.NewBufferString(`{"msg_index":0}`))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotImplemented {
+			t.Fatalf("status = %d, want 501", rec.Code)
+		}
+	})
 }

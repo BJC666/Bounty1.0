@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"regexp"
 	"strings"
@@ -286,7 +287,9 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 
 	if a.checkpointer != nil {
 		a.checkpointer.BeginTurn(input, turnMsgIndex)
-		a.checkpointer.SaveTurn(input, turnMsgIndex)
+		if err := a.checkpointer.SaveTurn(input, turnMsgIndex); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: checkpoint save failed: %v\n", err)
+		}
 	}
 
 	sess.Add(provider.Message{Role: "user", Content: input})

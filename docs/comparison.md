@@ -158,7 +158,7 @@
 | System Prompt缓存 | ✅ 构建后不变 | ✅ | ✅ | ✅ 3层prompt | ✅ 8层保护 |
 | Skills索引限制 | ✅ 4000字 | ✅ | ✅ 3级加载 | ❌ | ✅ 4000字 |
 | Turn-tail注入 | ✅ compose() | ✅ | ✅ | ❌ | ✅ |
-| Checkpoint/Rewind | ✅ git-free | ❌ | ❌ | ❌ | ✅ |
+| Checkpoint/Rewind | ✅ git 影子仓库（P3-3） | ❌ | ❌ | ❌ | ✅ |
 | 环境探针缓存 | ✅ sync.Once | ✅ | ❌ | ❌ | ✅ |
 | 崩溃恢复 | ✅ checkpoint | ✅ | ❌ | ✅ metadata | ✅ |
 

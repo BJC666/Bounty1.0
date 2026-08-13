@@ -8,11 +8,16 @@ import (
 	"strings"
 
 	"bounty/internal/auth"
+	"bounty/internal/checkpoint"
 )
 
 type ChatHandler struct {
 	SendFn   func(text string) error
 	SwitchFn func(req ModelSwitchRequest) error
+	// CheckpointListFn/RestoreFn expose the git-shadow-repo rollback
+	// (P3-3). nil means checkpoints are unavailable in this deployment.
+	CheckpointListFn    func() ([]checkpoint.Info, error)
+	CheckpointRestoreFn func(msgIndex int) error
 }
 
 // ModelSwitchRequest carries the connection parameters for a runtime model
@@ -79,9 +84,63 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/chat/api/checkpoints" && r.Method == http.MethodGet {
+		h.checkpointsAPI(w)
+		return
+	}
+	if r.URL.Path == "/chat/api/checkpoints/restore" && r.Method == http.MethodPost {
+		h.restoreAPI(w, r)
+		return
+	}
+
 	// Serve the chat SPA
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(chatHTML))
+}
+
+// checkpointsAPI lists the per-message checkpoints of the current session.
+func (h *ChatHandler) checkpointsAPI(w http.ResponseWriter) {
+	if h.CheckpointListFn == nil {
+		http.Error(w, "checkpoints unavailable", http.StatusNotImplemented)
+		return
+	}
+	list, err := h.CheckpointListFn()
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "checkpoints": list})
+}
+
+// restoreAPI rolls the workspace files back to just before the given user
+// message (git shadow repo tag msg-<N>).
+func (h *ChatHandler) restoreAPI(w http.ResponseWriter, r *http.Request) {
+	if h.CheckpointRestoreFn == nil {
+		http.Error(w, "checkpoints unavailable", http.StatusNotImplemented)
+		return
+	}
+	var req struct {
+		MsgIndex *int `json:"msg_index"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.MsgIndex == nil {
+		http.Error(w, "msg_index is required", http.StatusBadRequest)
+		return
+	}
+	if err := h.CheckpointRestoreFn(*req.MsgIndex); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "msg_index": *req.MsgIndex})
 }
 
 var chatHTML string
@@ -178,6 +237,7 @@ select { background: var(--bg); color: var(--cream); border: 1px solid var(--bor
 <div class="tabs">
   <div class="tab tab-chat active" onclick="switchTab('chat')">💬 Chat</div>
   <div class="tab tab-devet" onclick="switchTab('devet')">🛡️ DeVET Security</div>
+  <div class="tab tab-ckpt" onclick="switchTab('ckpt')">↩️ 回滚</div>
 </div>
 <div id="panel-chat" class="panel active">
 <div id="stats">
@@ -231,6 +291,16 @@ select { background: var(--bg); color: var(--cream); border: 1px solid var(--bor
     <h3>📊 Attack Summary</h3>
     <div class="attack-grid" id="attack-grid">
     </div>
+  </div>
+</div>
+<div id="panel-ckpt" class="panel">
+  <div class="devet-card">
+    <h3>↩️ 检查点回滚（git 影子仓库）</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:8px;">每条用户消息开始前自动生成一个工作区全量快照。回滚会把工作区文件恢复到该消息开始前的状态，并清除之后新增的文件（.git 目录不受影响）。</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+      <button onclick="refreshCheckpoints()" style="background:var(--gold);color:#000;border:none;border-radius:4px;padding:6px 14px;font-weight:600;cursor:pointer;font-size:13px;">🔄 刷新检查点</button>
+    </div>
+    <div id="ckpt-list" style="font-size:13px;"></div>
   </div>
 </div>
 <script>
@@ -347,6 +417,59 @@ function handleKey(e) {
   }
 }
 
+// ── Checkpoint Rollback (git shadow repo) ──
+async function refreshCheckpoints() {
+  const el = document.getElementById('ckpt-list');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--muted);">加载中...</span>';
+  try {
+    const r = await fetch('/chat/api/checkpoints' + tokenParam);
+    const d = await r.json();
+    if (!r.ok || d.status !== 'ok') {
+      el.innerHTML = '<span class="result-fail">❌ ' + esc(d.error || '检查点不可用') + '</span>';
+      return;
+    }
+    const list = (d.checkpoints || []).slice().reverse();
+    if (!list.length) {
+      el.innerHTML = '<span style="color:var(--muted);">暂无检查点。发送第一条消息后，每条消息前会自动生成一个快照。</span>';
+      return;
+    }
+    let html = '';
+    list.forEach(c => {
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">'
+        + '<div><span style="color:var(--gold);font-weight:600;">消息 #' + esc(c.msg_index) + '</span>'
+        + (c.prompt ? '<div style="color:var(--muted);font-size:12px;white-space:pre-wrap;word-break:break-word;">' + esc(c.prompt) + '</div>' : '')
+        + '</div>'
+        + '<button onclick="restoreCheckpoint(' + Number(c.msg_index) + ')" style="background:var(--surface);color:var(--red);border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap;">回滚到此</button>'
+        + '</div>';
+    });
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = '<span class="result-fail">❌ ' + esc(err) + '</span>';
+  }
+}
+
+async function restoreCheckpoint(idx) {
+  if (!confirm('确认回滚工作区到消息 #' + idx + ' 开始前的状态？之后新增/修改的文件将被还原或清除。')) return;
+  const el = document.getElementById('ckpt-list');
+  el.innerHTML = '<span style="color:var(--gold);">⏳ 回滚中...</span>';
+  try {
+    const r = await fetch('/chat/api/checkpoints/restore' + tokenParam, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({msg_index: idx})
+    });
+    const d = await r.json();
+    if (r.ok && d.status === 'ok') {
+      el.innerHTML = '<span class="result-ok">✅ 已回滚到消息 #' + Number(idx) + ' 开始前的状态</span>';
+    } else {
+      el.innerHTML = '<span class="result-fail">❌ ' + esc(d.error || '回滚失败') + '</span>';
+    }
+  } catch (err) {
+    el.innerHTML = '<span class="result-fail">❌ ' + esc(err) + '</span>';
+  }
+}
+
 // ── Model Switching ──
 function switchModel() {
   const urlEl = document.getElementById('modelUrl');
@@ -391,6 +514,7 @@ function switchTab(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelector('.tab-' + name).classList.add('active');
   document.getElementById('panel-' + name).classList.add('active');
+  if (name === 'ckpt') refreshCheckpoints();
 }
 
 // ── sendMessageText: post a message directly without using the textarea ──

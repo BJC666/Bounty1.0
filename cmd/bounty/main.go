@@ -14,6 +14,7 @@ import (
 	"bounty/internal/auth"
 	"bounty/internal/boot"
 	"bounty/internal/channel"
+	"bounty/internal/checkpoint"
 	"bounty/internal/cli"
 	"bounty/internal/config"
 	"bounty/internal/event"
@@ -270,6 +271,7 @@ func dashboardCmd() {
 		os.Exit(1)
 	}
 
+	restorer := ctrl.CheckpointRestorer()
 	chatHandler := &serve.ChatHandler{
 		SendFn: func(text string) error { return ctrl.Send(context.Background(), text) },
 		SwitchFn: func(req serve.ModelSwitchRequest) error {
@@ -287,6 +289,18 @@ func dashboardCmd() {
 				return fmt.Errorf("连接测试失败: %v", err)
 			}
 			return ctrl.SwitchProvider(prov, req.Model)
+		},
+		CheckpointListFn: func() ([]checkpoint.Info, error) {
+			if restorer == nil {
+				return nil, fmt.Errorf("检查点不可用（git 未安装或无会话）")
+			}
+			return restorer.ListCheckpoints()
+		},
+		CheckpointRestoreFn: func(msgIndex int) error {
+			if restorer == nil {
+				return fmt.Errorf("检查点不可用（git 未安装或无会话）")
+			}
+			return restorer.RestoreCheckpoint(msgIndex)
 		},
 	}
 
@@ -349,6 +363,7 @@ type broadcastSink struct {
 	clients map[chan string]bool
 	mu      sync.Mutex
 }
+
 func newBroadcastSink() *broadcastSink { return &broadcastSink{clients: make(map[chan string]bool)} }
 func (b *broadcastSink) Emit(ev event.Event) {
 	data, err := json.Marshal(ev)
@@ -371,19 +386,24 @@ func (b *broadcastSink) Emit(ev event.Event) {
 	}
 }
 
-
 func (b *broadcastSink) serveSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	flusher, ok := w.(http.Flusher)
-	if !ok { http.Error(w, "streaming not supported", 500); return }
+	if !ok {
+		http.Error(w, "streaming not supported", 500)
+		return
+	}
 	ch := make(chan string, 512)
-	b.mu.Lock(); b.clients[ch] = true; b.mu.Unlock()
+	b.mu.Lock()
+	b.clients[ch] = true
+	b.mu.Unlock()
 	defer func() { b.mu.Lock(); delete(b.clients, ch); close(ch); b.mu.Unlock() }()
 	for {
 		select {
-		case <-r.Context().Done(): return
+		case <-r.Context().Done():
+			return
 		case data := <-ch:
 			// Extend the write deadline so an idle SSE stream survives the
 			// server-level WriteTimeout.

@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 )
 
 // FileSnap records the pre-edit state of a file.
 type FileSnap struct {
 	Path     string `json:"path"`
-	Content  string `json:"content,omitempty"`  // empty if file didn't exist (delete on restore)
-	Existed  bool   `json:"existed"`            // false = file was created this turn
+	Content  string `json:"content,omitempty"` // empty if file didn't exist (delete on restore)
+	Existed  bool   `json:"existed"`           // false = file was created this turn
 	Encoding string `json:"encoding,omitempty"`
 }
 
@@ -188,4 +189,34 @@ func (s *Store) GetMsgIndex(turn int) (int, error) {
 		return 0, err
 	}
 	return ckpt.MsgIndex, nil
+}
+
+// ListCheckpoints maps legacy turn checkpoints to message-indexed Info for the
+// same picker UI GitStore feeds.
+func (s *Store) ListCheckpoints() ([]Info, error) {
+	ckpts, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	list := make([]Info, 0, len(ckpts))
+	for _, c := range ckpts {
+		list = append(list, Info{MsgIndex: c.MsgIndex, Prompt: c.Prompt})
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].MsgIndex < list[j].MsgIndex })
+	return list, nil
+}
+
+// RestoreCheckpoint finds the legacy turn whose MsgIndex matches and restores
+// its file snapshots.
+func (s *Store) RestoreCheckpoint(msgIndex int) error {
+	ckpts, err := s.List()
+	if err != nil {
+		return err
+	}
+	for _, c := range ckpts {
+		if c.MsgIndex == msgIndex {
+			return s.Restore(c.Turn)
+		}
+	}
+	return fmt.Errorf("checkpoint for message %d not found", msgIndex)
 }

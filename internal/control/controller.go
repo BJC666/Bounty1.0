@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"bounty/internal/agent"
+	"bounty/internal/checkpoint"
 	"bounty/internal/event"
 	"bounty/internal/hook"
 	"bounty/internal/permission"
@@ -21,19 +22,20 @@ import (
 // plan mode, goals, and pending memory updates before dispatching to the agent
 // runner.
 type Controller struct {
-	runner       agent.Runner
-	sink         event.Sink
-	store        *store.Store
-	sessionID    string
-	planMode     bool
-	hooks        *hook.Runner
-	gate         *permission.Gate
-	skills       *skill.Store
-	commands     *plugin.CommandStore
-	agentDefs    *plugin.AgentStore
-	mu           sync.Mutex
-	pending      []string
-	goalText     string
+	runner    agent.Runner
+	sink      event.Sink
+	store     *store.Store
+	sessionID string
+	planMode  bool
+	hooks     *hook.Runner
+	gate      *permission.Gate
+	skills    *skill.Store
+	commands  *plugin.CommandStore
+	agentDefs *plugin.AgentStore
+	restorer  checkpoint.Restorer
+	mu        sync.Mutex
+	pending   []string
+	goalText  string
 }
 
 // New creates a Controller wired to the given runner, sink, store, hooks, gate,
@@ -208,4 +210,19 @@ func extractTitle(messages []provider.Message) string {
 		}
 	}
 	return "New Session"
+}
+
+// SetCheckpointRestorer attaches the session's rollback provider (git shadow
+// repo or legacy file store). nil is allowed when checkpoints are unavailable.
+func (c *Controller) SetCheckpointRestorer(r checkpoint.Restorer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.restorer = r
+}
+
+// CheckpointRestorer returns the attached rollback provider, or nil.
+func (c *Controller) CheckpointRestorer() checkpoint.Restorer {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.restorer
 }

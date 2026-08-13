@@ -188,6 +188,7 @@
 - 现状：`internal/checkpoint` 文件快照，只覆盖声明了写路径的工具。
 - 目标：会话开始即建影子 git 仓库自动提交工作区；每条用户消息一个 checkpoint 标签；支持"回滚到消息 N"（文件层面）。
 - 验收：乱改 50 个文件后一键回滚，diff 为空。
+- 状态（2026-08-13）：✅ 已交付——新增 `checkpoint.GitStore`（`internal/checkpoint/gitstore.go`）：会话启动即 `git init --bare` 影子仓库（`~/bounty-data/checkpoints/<session>/shadow.git`，位于工作区之外，不自嵌套）；每条用户消息在 `SaveTurn` 做全量快照：`git add -A -f -- .`（`-f` 连被 .gitignore 忽略的文件一并纳入，保证回滚语义精确；`:(exclude).git` 排除真实仓库；`-c core.autocrlf=false`/`core.eol=lf` 固定字节级往返）→ `--allow-empty` 提交 → `msg-<N>` 标签；`RestoreCheckpoint` = `ls-tree` 取标签文件集 → 自底向上删除树外文件（跳过 `.git`）→ `read-tree` + `checkout-index -a -f` 逐字节写回 → `update-ref` 移动 HEAD。web 端一键回滚：serve 新增 `GET /chat/api/checkpoints`、`POST /chat/api/checkpoints/restore`，chat SPA 新增「↩️ 回滚」面板（检查点列表 + 二次确认 + 状态反馈）；boot 优先注册 GitStore，git 缺失时回退旧文件 Store（旧 Store 同步补 `Restorer` 接口实现，两路径同能力）。验证：`gitstore_test.go` 8 项全绿——验收用例「乱改 50 文件 + 新增 20 未追踪 + 删 10 文件，一键回滚后与基线逐字节一致」、中间消息回滚、二进制 + 中文路径字节精确、文件↔目录交换、真实 `.git` 目录不受影响、未知消息报错；`chat_test.go` 端点 7 项（列表/恢复/缺参/不可用）；`go test ./...` 全绿、selfcheck 35/35；实测 dashboard 端到端：真实消息 → tag msg-1 → 回滚 API ok → 工作区 diff 与回滚前一致。诚实边界：回滚为文件层面（会话消息不截断）；`-f` 全量快照在大仓库下每条消息有 git 扫描成本（换取完整回滚语义）；回滚与正在运行的工具轮存在竞态（UI 尚未加轮运行锁，待 P3-5 收口）。
 
 **P3-4 子代理增强**
 - 目标：`task` 增加 `explore`/`general` 角色 prompt（explore 只读+报告结构）；父代理把"任务相关的最近上下文片段"注入子代理（≤2KB）；子代理返回结构化摘要（结论/证据/文件清单）而非原始末条全文；`model` 参数生效（子代理可换便宜模型）。

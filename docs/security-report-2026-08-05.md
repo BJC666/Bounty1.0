@@ -100,3 +100,20 @@
 - 新增：Network=false 时出站预检（curl/pip/npm/git clone/Invoke-WebRequest/WebClient 等 19 类）+ 代理环境毒化；注意这是环境级阻断，非内核 WFP，绕过需直接 TCP 编程——文档已声明，可作后续增强。
 - 新增：bash 命令路径预检——引号感知重定向解析，workspace+allow_write 之外写入、forbid_read/forbid_write 命中即拦截（与权限门策略同语义）。
 - 已知边界：管道/命令代换中间接路径（`echo x > $(calc)` 类）无法静态覆盖；深子进程系统调用级 FS 限制未做（需要 ACL/AppContainer）。风险等级：中低。
+
+# 2026-08-13 增补：P3-3 git 影子仓库检查点
+
+## 设计
+- 会话启动时在用户级数据目录 `~/bounty-data/checkpoints/<session>/shadow.git` 建裸仓库（位于工作区之外，不会自嵌套）；每条用户消息前做全量快照并打 `msg-<N>` 标签，web 端可一键回滚到任意消息。
+- 快照通过 `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` 环境变量隔离，不触碰工作区真实 `.git` 的任何状态（不写 refs、不跑工作区 hooks——bare 仓库默认无 hooks）。
+- `git add` 使用 `:(exclude).git` pathspec 排除真实仓库目录；回滚删除阶段同样跳过 `.git`；BOUNTY_HOME 若指向工作区内，影子目录自动从快照与清理中排除。
+
+## 安全属性
+- 回滚不执行任何来自工作区的代码：恢复路径只有 `ls-tree`（读对象库）→ 文件系统删除/写入 → `read-tree`/`checkout-index`（写文件），不触发 hook、脚本或构建。
+- `-c core.autocrlf=false`/`core.eol=lf`/`core.safecrlf=false` 固定配置，避免全局 git 配置（autocrlf 转换等）破坏快照的字节精确性。
+- 回滚 API 继承 web 控制台既有认证（BOUNTY_AUTH_TOKEN 恒定时间比较），前端二次确认后才执行；恢复目标是"消息开始前"状态，语义可预期。
+
+## 已知风险与边界
+- 快照是工作区全量镜像（含 .env 等敏感文件，与 Claude Code 同类工具的本地 checkpoint 行为一致）：影子仓库只在本地用户数据目录，不推送、不随仓库分发；但若工作区本身含密钥，等于在 bounty-data 下多了一份副本，磁盘泄露面与 session store 相同。
+- `git add -f` 会纳入被 .gitignore 忽略的构建产物/本地文件，换取回滚精确性；大型仓库每消息有全量扫描成本（性能换语义，已在路线图标注）。
+- 回滚为文件层面，不截断会话消息历史；回滚与正在运行的工具轮存在竞态（UI 未加轮运行锁，待 P3-5 收口）。
