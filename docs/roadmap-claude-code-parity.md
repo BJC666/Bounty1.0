@@ -210,6 +210,7 @@
 **P4-2 内置技能与学习闭环**
 - 目标：内置 20 个高质量技能（git/代码审查/测试修复/文档生成/翻译等）；`background_review` 的建议自动走 `remember`；技能安全审计（AST/危险模式扫描，补齐 comparison.md 的 ❌）。
 - 验收：技能索引 20 条；审计器对含危险命令的技能文件报出并拒绝加载。
+- 状态（2026-08-13）：✅ 已交付——①新增仓库内置 `skills/` 20 个高质量技能（git-workflow/code-review/fix-tests/docs-generation/translation/refactoring/debugging/security-audit/performance-tuning/database-design/api-design/docker-deploy/scripting/regex/data-processing/network-diagnosis/build-release/log-analysis/code-search/context-hygiene），每个含 frontmatter（name/description/triggers/read_only）+ 可直接执行的中文规范正文；boot 启动必发现 `skills/` + `<bounty-data>/skills` + 配置路径，并接入 `disabled_skills` 过滤（此前该配置字段未接线）。②技能安全审计 `skill/audit.go`：8 条规则（递归删除/管道进 shell/提权/历史改写/fork-bomb/base64 解码执行/凭据外泄/下载即执行，大小写不敏感子串匹配+命中片段回显），`Store.Discover` 对命中技能**拒绝加载**并记录 `Rejected`（名称/路径/Findings），boot stderr 报出。③`background_review` 建议自动走 remember：核实已接线（RunReview→persistSuggestions→memory.RememberStore.Save，注入/自复制标记拒绝），7 项既有测试覆盖。测试：skill 新增 5 项全绿——含验收锁 `TestBuiltinSkillsIndexTwenty`（技能索引=20 且全部通过审计）+ 危险样本 8 规则逐条拒绝 + 拒绝不进索引 + Disable 过滤 + 干净正文放行；`go vet`+`go test ./...` 全绿。诚实边界：审计为正文子串扫描（非 AST/语义级，可通过拆词/编码混淆绕过；技能正文目前不自动执行，风险面是提示词层面）；20 个技能的「触发即注入正文」加载器未做（当前为索引级技能，与既有 comparison 口径一致）。
 
 **P4-3 无头与 CI 形态**
 - 目标：`run --json` 输出规范化事件流（已有 event 包）；一个 GitHub Action 示例（PR 自动 code review + 跑测试）；后台长命令（bash 超 60s 自动转后台，`bash_output` 轮询）。

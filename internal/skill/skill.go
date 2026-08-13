@@ -27,8 +27,9 @@ type IndexEntry struct {
 }
 
 type Store struct {
-	skills  []*Skill
-	enabled []*Skill
+	skills   []*Skill
+	enabled  []*Skill
+	Rejected []RejectedSkill
 }
 
 func NewStore() *Store { return &Store{} }
@@ -42,16 +43,50 @@ func (s *Store) Discover(paths []string) error {
 			if !info.IsDir() && strings.HasSuffix(info.Name(), ".md") {
 				// parseSkillFile returns (nil, nil) for files without
 				// frontmatter — skip those instead of appending a nil skill.
-				if skill, err := parseSkillFile(path); err == nil && skill != nil {
-					s.skills = append(s.skills, skill)
-					s.enabled = append(s.enabled, skill)
+				sk, err := parseSkillFile(path)
+				if err != nil || sk == nil {
+					return nil
 				}
+				// P4-2: safety audit — skills carrying dangerous shell /
+				// credential patterns are refused at load time and reported
+				// via Store.Rejected instead of entering the index.
+				if audit := AuditSkill(sk); !audit.Passed {
+					s.Rejected = append(s.Rejected, RejectedSkill{
+						Name: sk.Name, SourcePath: path, Findings: audit.Findings,
+					})
+					return nil
+				}
+				s.skills = append(s.skills, sk)
+				s.enabled = append(s.enabled, sk)
 			}
 			return nil
 		})
 	}
 	return nil
 }
+
+// Disable removes the named skills (config disabled_skills) from the active
+// index. Unknown names are ignored.
+func (s *Store) Disable(names []string) {
+	blocked := make(map[string]bool, len(names))
+	for _, n := range names {
+		blocked[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	if len(blocked) == 0 {
+		return
+	}
+	kept := s.enabled[:0]
+	for _, sk := range s.enabled {
+		if blocked[strings.ToLower(sk.Name)] {
+			continue
+		}
+		kept = append(kept, sk)
+	}
+	s.enabled = kept
+}
+
+// Count returns the number of enabled skills in the index.
+func (s *Store) Count() int { return len(s.enabled) }
 
 func (s *Store) Index() []IndexEntry {
 	var entries []IndexEntry

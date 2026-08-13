@@ -1,12 +1,14 @@
 package devet
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -18,10 +20,27 @@ type Backend struct {
 	baseURL string
 }
 
+// Tunable so tests can shorten the readiness window without slowing the suite.
+var (
+	backendReadyTimeout      = 10 * time.Second
+	backendReadyPollInterval = 200 * time.Millisecond
+)
+
 // StartOrConnect tries to connect to an existing DeVET backend,
 // or starts a new one if not running.
+//
+// devetDir may be relative (e.g. "..\DeVET"); it is resolved to an absolute
+// path before use because the child python process runs with its working
+// directory set to <devetDir>/backend — a relative server path in argv would
+// be re-resolved against that directory and double up into a non-existent
+// file (the historical "not responding after 6s" bug).
 func StartOrConnect(ctx context.Context, devetDir string) (*Backend, error) {
 	port := 8765
+	if p := os.Getenv("DEVET_PORT"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 && n < 65536 {
+			port = n
+		}
+	}
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d/api", port)
 
 	// Try existing backend first
@@ -29,8 +48,12 @@ func StartOrConnect(ctx context.Context, devetDir string) (*Backend, error) {
 		return &Backend{port: port, baseURL: baseURL}, nil
 	}
 
-	// Try to start the Python backend
-	serverPath := filepath.Join(devetDir, "backend", "server.py")
+	absDevetDir, err := filepath.Abs(devetDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve DeVET dir %q: %w", devetDir, err)
+	}
+	backendDir := filepath.Join(absDevetDir, "backend")
+	serverPath := filepath.Join(backendDir, "server.py")
 	if _, err := os.Stat(serverPath); err != nil {
 		return nil, fmt.Errorf("DeVET backend not found at %s and not running — install DeVET first", serverPath)
 	}
@@ -48,22 +71,27 @@ func StartOrConnect(ctx context.Context, devetDir string) (*Backend, error) {
 	if pythonBin == "" {
 		return nil, fmt.Errorf("python 3 not found on PATH — install Python to use DeVET tools")
 	}
+
 	cmd := exec.CommandContext(ctx, pythonBin, serverPath)
-	cmd.Dir = filepath.Join(devetDir, "backend")
+	cmd.Dir = backendDir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start DeVET backend: %w", err)
 	}
 
 	// Wait for backend to be ready
-	for i := 0; i < 30; i++ {
-		time.Sleep(200 * time.Millisecond)
+	deadline := time.Now().Add(backendReadyTimeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(backendReadyPollInterval)
 		if isRunning(baseURL) {
 			return &Backend{cmd: cmd, port: port, baseURL: baseURL}, nil
 		}
 	}
 	cmd.Process.Kill()
 	cmd.Wait()
-	return nil, fmt.Errorf("DeVET backend started but not responding after 6s")
+	return nil, fmt.Errorf("DeVET backend started but not responding after %s: %s",
+		backendReadyTimeout, tail(stderr.String(), 500))
 }
 
 // probePython verifies a python candidate actually runs (guards against the
@@ -71,6 +99,17 @@ func StartOrConnect(ctx context.Context, devetDir string) (*Backend, error) {
 func probePython(bin string) bool {
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	return err == nil && len(out) > 0
+}
+
+// tail returns the last n characters of s, useful for error diagnostics.
+func tail(s string, n int) string {
+	if n < 0 {
+		n = 0
+	}
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
 }
 
 // devetClient carries a short timeout so a stalled local backend cannot hang

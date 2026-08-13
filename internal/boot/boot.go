@@ -181,9 +181,20 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	// 6. Load memory
 	memDocs, _ := memory.Load(cfg.Sandbox.WorkspaceRoot)
 
-	// 7. Load skills
+	// 7. Load skills — P4-2: the repo-bundled skills/ directory and the
+	// user data dir are always discovered first, then configured paths;
+	// dangerous skill files are refused by the safety audit and reported.
 	skillStore := skill.NewStore()
-	skillStore.Discover(cfg.Skills.Paths)
+	skillPaths := append([]string{
+		filepath.Join("skills"),
+		filepath.Join(dataDir(), "skills"),
+	}, cfg.Skills.Paths...)
+	skillStore.Discover(skillPaths)
+	skillStore.Disable(cfg.Skills.Disabled)
+	for _, rejected := range skillStore.Rejected {
+		fmt.Fprintf(os.Stderr, "Skill audit: rejected %q (%s): %v\n",
+			rejected.Name, rejected.SourcePath, rejected.Findings)
+	}
 
 	// 7a. Skill curator — lifecycle management (active -> inactive -> archived)
 	curator := skill.NewCurator(skill.CuratorConfig{Enabled: true}, skillStore, dataDir())

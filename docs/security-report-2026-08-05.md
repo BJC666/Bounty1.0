@@ -151,3 +151,11 @@
 - 证明为「结果承诺级」，非 TLS notary 级网络证明（与 DeVET 演示后端同口径）；防的是子结果伪造/委托替换/策略绕过，不防模型本身被提示词注入欺骗后的"心甘情愿"输出。
 - 后端为进程内内存态（重启丢链），多会话并发 mirror 会覆盖上一条链——单进程单会话部署下无影响，多租户部署需按会话分片（未做）。
 - 镜像频率=子代理完成频率，无批处理/去重，高并发 fleet（64 子代理）会逐次 POST，吞吐未压测。
+
+# 2026-08-13 增补：P4-2 技能安全审计 + 内置技能
+
+- 新增 `skill/audit.go`：8 条审计规则——recursive-delete / pipe-to-shell / privilege-escalation / history-rewrite / fork-bomb / base64-decode-exec / credential-exfil / network-download-exec。大小写不敏感子串匹配，命中即拒绝加载并回显 40 字上下文片段（可审计、可复核）。
+- `Store.Discover` 集成：危险技能文件进入 `Rejected`（名称/路径/Findings），不进入索引、不出现在系统提示；boot 启动时 stderr 报出。
+- 顺带接线 `disabled_skills` 配置过滤（此前字段存在但未生效），管理员可显式下线技能。
+- 内置 `skills/` 20 个技能全部通过审计（测试锁定：`TestBuiltinSkillsIndexTwenty` 断言索引=20 且 Rejected=0）。
+- 已知边界：子串扫描可被拆词/编码/间接引用绕过（非 AST 级语义分析）；技能正文当前不进自动执行链（索引级技能），因此被拒绝技能的最大风险面是「提示词注入式引导」，拒绝加载足以消除该面；若未来支持「触发即注入正文」，需将审计升级为 AST/行为级。
