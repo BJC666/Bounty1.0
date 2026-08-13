@@ -21,7 +21,7 @@ func TestSystemPromptAdvisesGlobFirst(t *testing.T) {
 	// P7-2：系统提示应引导模型先 glob 定位再读写文件（Eval 路径猜测是最大残余失败源）。
 	cfg := &config.Config{Sandbox: config.SandboxConfig{WorkspaceRoot: t.TempDir()}}
 	prompt := buildSystemPrompt(cfg, "test-model", nil, []skill.IndexEntry{}, plugin.NewCommandStore())
-	if !strings.Contains(prompt, "locate it with `glob` first") {
+	if !strings.Contains(prompt, "Locate files with `glob` before") {
 		t.Error("system prompt should advise glob-first before file reads/edits")
 	}
 }

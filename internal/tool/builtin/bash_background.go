@@ -211,10 +211,10 @@ func (b *BashOutputTool) Name() string      { return "bash_output" }
 func (b *BashOutputTool) ReadOnly() bool    { return true }
 func (b *BashOutputTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (b *BashOutputTool) Description() string {
-	return "Poll a background bash job started with run_in_background=true or timeout>60s. Returns status (running/done), exit code, and the latest output tail."
+	return "Poll a background bash job: status (running/done), exit code, output tail."
 }
 func (b *BashOutputTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"job_id":{"type":"string","maxLength":64,"description":"Job id returned by bash (e.g. bg-1)"},"tail":{"type":"number","minimum":100,"maximum":16000,"description":"Max output characters to return (default 8000)"}},"required":["job_id"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"job_id":{"type":"string","maxLength":64,"description":"Job id (e.g. bg-1)"},"tail":{"type":"number","minimum":100,"maximum":16000,"description":"Max chars (default 8000)"}},"required":["job_id"],"additionalProperties":false}`)
 }
 func (b *BashOutputTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	if b.Store == nil {

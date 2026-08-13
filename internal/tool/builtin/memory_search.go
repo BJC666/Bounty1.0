@@ -19,10 +19,10 @@ func (m *MemorySearchTool) Name() string      { return "memory_search" }
 func (m *MemorySearchTool) ReadOnly() bool    { return true }
 func (m *MemorySearchTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (m *MemorySearchTool) Description() string {
-	return "Search project auto-memory (facts saved with the remember tool: user preferences, conventions, lessons learned). Use an empty query to list recent memories."
+	return "Search project auto-memory (facts saved by remember). Empty query lists recent memories."
 }
 func (m *MemorySearchTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"Free-text query; empty returns the most recent memories"},"limit":{"type":"integer","description":"Max results, default 5, max 20"}}}`)
+	return json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"Query; empty = recent"},"limit":{"type":"integer","description":"Max results (default 5)"}}}`)
 }
 
 type memoryHit struct {

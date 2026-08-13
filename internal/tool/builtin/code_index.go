@@ -19,10 +19,10 @@ func (CodeIndexTool) Name() string      { return "code_index" }
 func (CodeIndexTool) ReadOnly() bool    { return true }
 func (CodeIndexTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (CodeIndexTool) Description() string {
-	return "Index code symbols (functions, types, methods) in a file or directory. Supports Go, Python, TypeScript, Rust."
+	return "Index code symbols (functions/types/methods) in a file or directory."
 }
 func (CodeIndexTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"File or directory to index"},"query":{"type":"string","description":"Optional: filter symbols by name (substring match)"},"kind":{"type":"string","enum":["function","type","method","all"],"description":"Kind of symbol to return"}},"required":["path"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"File or dir"},"query":{"type":"string","description":"Filter by name (substring)"},"kind":{"type":"string","enum":["function","type","method","all"],"description":"Symbol kind"}},"required":["path"]}`)
 }
 
 func (CodeIndexTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
