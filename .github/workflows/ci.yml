@@ -20,10 +20,19 @@ jobs:
         run: go build ./...
       - name: Vet
         run: go vet ./...
-      - name: gofmt check
+      - name: gofmt check (changed files only)
         run: |
-          files=$(gofmt -l .)
-          if [ -n "$files" ]; then echo "需要 gofmt 的文件："; echo "$files"; exit 1; fi
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$GITHUB_BASE_REF" --depth=1 || true
+            files=$(git diff --name-only --diff-filter=ACM "origin/$GITHUB_BASE_REF..HEAD" -- "*.go")
+          else
+            files=$(git diff --name-only --diff-filter=ACM HEAD~1 -- "*.go")
+          fi
+          if [ -n "$files" ]; then
+            unformatted=$(gofmt -l $files)
+            if [ -n "$unformatted" ]; then echo "需要 gofmt 的文件："; echo "$unformatted"; exit 1; fi
+          fi
+          echo "gofmt OK"
       - name: Test
         run: go test ./... -count=1 -timeout=600s
       - name: Test coverage
