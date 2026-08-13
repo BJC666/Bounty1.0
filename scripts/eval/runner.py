@@ -311,6 +311,13 @@ def run_one(args, task, model, run_id, bounty_bin):
     return task["id"], model, result
 
 
+def warn_non_ascii_workdir(work_dir):
+    """中文/非 ASCII 路径在 cmd 下更易触发编码失败（P6 残余失败第二大来源）。"""
+    if any(ord(c) > 127 for c in str(work_dir)):
+        print(f"[WARN] work 路径含非 ASCII 字符：{work_dir}")
+        print("       建议 --work 指定纯 ASCII 路径（如 C:\\bounty-eval\\work）以规避 cmd 编码问题")
+
+
 def find_failed_tasks(work_dir, run_id, models):
     """扫描 <work>/<run_id>/<slug>/*/run.json，返回运行级失败任务 id 集合。"""
     failed = set()
@@ -373,6 +380,7 @@ def main():
 
     bounty_bin = ensure_binary(REPO_ROOT, force=args.rebuild)
     args.work.mkdir(parents=True, exist_ok=True)
+    warn_non_ascii_workdir(args.work)
     (args.work / args.run_id).mkdir(parents=True, exist_ok=True)
     meta = {
         "run_id": args.run_id,

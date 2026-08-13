@@ -140,6 +140,21 @@ class TestPreflight(unittest.TestCase):
             self.assertFalse(runner.preflight_models(cfg, ["qwen/qwen3.8-max"]))
 
 
+class TestWorkdirWarning(unittest.TestCase):
+    def test_warns_on_non_ascii_path(self):
+        buf = _io.StringIO()
+        with mock.patch("sys.stdout", buf):
+            runner.warn_non_ascii_workdir(r"D:\智能体开发\work")
+        self.assertIn("WARN", buf.getvalue())
+        self.assertIn("ASCII", buf.getvalue())
+
+    def test_silent_on_ascii_path(self):
+        buf = _io.StringIO()
+        with mock.patch("sys.stdout", buf):
+            runner.warn_non_ascii_workdir(r"C:\bounty-eval\work")
+        self.assertEqual(buf.getvalue(), "")
+
+
 class TestFindFailedTasks(unittest.TestCase):
     def test_collects_exit_and_timeout(self):
         tmp = Path(tempfile.mkdtemp(prefix="eval_robust_"))

@@ -624,6 +624,7 @@ func buildSystemPrompt(cfg *config.Config, modelName string, docs []memory.Doc, 
 	sb.WriteString("- Never call web_search for greetings or small talk.\n")
 	sb.WriteString("- If unsure whether to use a tool, default to answering directly.\n")
 	sb.WriteString("- `memory_search` retrieves facts saved by `remember` (user preferences, conventions, lessons learned); prefer it over guessing when the user references earlier agreements.\n")
+	sb.WriteString("- Before reading or editing a file, locate it with `glob` first unless you are certain of the exact path; guessing paths is the #1 avoidable tool failure.\n")
 	sb.WriteString("\n## DeVET Security Tools\n")
 	sb.WriteString("You have DeVET multi-agent delegation verification tools available:\n")
 	sb.WriteString("- `devet_health` — check DeVET backend status\n")
