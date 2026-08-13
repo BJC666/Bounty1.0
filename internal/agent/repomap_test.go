@@ -101,3 +101,46 @@ func TestStripRepoMap(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+type fakeTodos struct{ text string }
+
+func (f *fakeTodos) Summary() string { return f.text }
+
+func TestRunInjectsTodoSummary(t *testing.T) {
+	base := "You are Bounty.\n## Tool Usage Rules\n"
+	repo := &fakeRepoMap{block1: "\n## Repo Map\n<!-- files=1 -->\n"}
+	todos := &fakeTodos{}
+
+	reg := tool.NewRegistry()
+	ag := New(&finisherProvider{}, reg, NewSession(base), Options{
+		Gate:    allowGate{},
+		Sink:    event.Discard,
+		RepoMap: repo,
+		Todos:   todos,
+	})
+
+	todos.text = "\n## Current Todos\n- [>] 写修复\n- [ ] 跑测试\n"
+	if err := ag.Run(context.Background(), "第一轮"); err != nil {
+		t.Fatal(err)
+	}
+	prompt := ag.Session().SystemPrompt
+	if !strings.Contains(prompt, "## Current Todos") || !strings.Contains(prompt, "写修复") {
+		t.Fatalf("todo block missing: %q", prompt)
+	}
+	if !strings.Contains(prompt, "## Repo Map") {
+		t.Fatalf("repo map block missing: %q", prompt)
+	}
+
+	// Todo change refreshes the tail on the next turn.
+	todos.text = "\n## Current Todos\n- [x] 写修复\n- [ ] 跑测试\n"
+	if err := ag.Run(context.Background(), "第二轮"); err != nil {
+		t.Fatal(err)
+	}
+	prompt = ag.Session().SystemPrompt
+	if !strings.Contains(prompt, "[x] 写修复") {
+		t.Fatalf("todo refresh missing: %q", prompt)
+	}
+	if strings.Count(prompt, "## Current Todos") != 1 {
+		t.Fatalf("todo section must appear once: %q", prompt)
+	}
+}

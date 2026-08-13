@@ -27,7 +27,6 @@ func RegisterAll(reg *tool.Registry, opts ToolOptions) {
 	reg.Add(&EditFileTool{})
 	reg.Add(&GrepTool{})
 	reg.Add(&GlobTool{})
-	reg.Add(&TodoWriteTool{})
 	reg.Add(&WebFetchTool{})
 	reg.Add(&WebSearchTool{})
 	reg.Add(&CodeIndexTool{})

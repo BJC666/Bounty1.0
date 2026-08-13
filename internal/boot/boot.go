@@ -179,6 +179,10 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		systemPrompt = basePrompt + block
 	}
 
+	if opts.Posture == permission.PosturePlan {
+		systemPrompt += planContractText()
+	}
+
 	// 9. Create Session
 	session := agent.NewSession(systemPrompt)
 
@@ -227,6 +231,8 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 			ckpt = ckptStore
 		}
 	}
+	todoSum := &todoSummary{}
+
 	ag := agent.New(prov, reg, session, agent.Options{
 		MaxSteps:      opts.MaxSteps,
 		Temperature:   cfg.Agent.Temperature,
@@ -245,6 +251,7 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		},
 		MemoryDir: workspaceRootFor(cfg),
 		RepoMap:   repoMapMgr,
+		Todos:     todoSum,
 	})
 
 	// 12b. Register subagent tools onto the same registry
@@ -257,6 +264,9 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
 	}
+	reg.Add(&builtin.TodoWriteTool{Store: st, SessionID: opts.SessionID})
+	todoSum.st = st
+	todoSum.sessionID = opts.SessionID
 
 	// 13b. Restore existing session messages if resuming
 	sessionTitle := "New Session"
@@ -555,6 +565,48 @@ func buildSystemPrompt(cfg *config.Config, modelName string, docs []memory.Doc, 
 // autoMemoryInjectionLimit caps how many recent auto-memory entries are
 // injected into the system prompt at startup (most recent first).
 const autoMemoryInjectionLimit = 8
+
+// todoSummary implements agent.TodoSummaryProvider: it renders the current
+// todo list (≤10 items) for injection into the system prompt tail.
+type todoSummary struct {
+	st        *store.Store
+	sessionID string
+}
+
+func (t todoSummary) Summary() string {
+	if t.st == nil || t.sessionID == "" {
+		return ""
+	}
+	todos, err := t.st.LoadTodos(t.sessionID)
+	if err != nil || len(todos) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("\n## Current Todos\n")
+	for i, td := range todos {
+		if i >= 10 {
+			sb.WriteString(fmt.Sprintf("- … 还有 %d 项\n", len(todos)-10))
+			break
+		}
+		marker := " "
+		switch td.Status {
+		case "completed":
+			marker = "x"
+		case "in_progress":
+			marker = ">"
+		}
+		sb.WriteString(fmt.Sprintf("- [%s] %s\n", marker, td.Content))
+	}
+	return sb.String()
+}
+
+// planContractText is appended to the system prompt in plan posture.
+func planContractText() string {
+	return `
+## Plan Contract
+你当前处于 plan 姿态：动手执行前必须先输出结构化计划，并用 todo_write 建立任务清单；计划中每一步对应一条 todo。所有非只读工具调用都需要用户批准，先计划再执行。每完成一步立即用 todo_write 更新对应状态（pending → in_progress → completed）。
+`
+}
 
 // workspaceRootFor returns the configured workspace root, falling back to
 // the process working directory when unset.

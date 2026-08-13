@@ -66,6 +66,12 @@ type RepoMapProvider interface {
 	Refresh() (block string, changed bool)
 }
 
+// TodoSummaryProvider renders the current todo list (≤10 lines) for
+// injection into the system prompt tail.
+type TodoSummaryProvider interface {
+	Summary() string
+}
+
 // Options configures an Agent. Zero values get sensible defaults.
 type Options struct {
 	MaxSteps      int
@@ -87,6 +93,9 @@ type Options struct {
 	// RepoMap, when set, refreshes the repo-map section of the system prompt
 	// whenever repository files change (per user turn).
 	RepoMap RepoMapProvider
+	// Todos, when set, injects the current todo list into the system prompt
+	// tail and refreshes it per user turn.
+	Todos TodoSummaryProvider
 }
 
 // Agent is the core turn-taking loop: stream LLM output, collect tool calls,
@@ -130,10 +139,13 @@ type Agent struct {
 	// Project root for background-review auto-memory persistence.
 	memoryDir string
 
-	// baseSystemPrompt is the system prompt with the repo-map section
-	// stripped; refreshRepoMap re-appends the latest block to it.
+	// baseSystemPrompt is the system prompt with the dynamic sections
+	// stripped; refreshContext re-appends the latest blocks to it.
 	baseSystemPrompt string
 	repoMap          RepoMapProvider
+	repoBlock        string
+	todos            TodoSummaryProvider
+	todoBlock        string
 
 	// Cached-prefix tracking for accurate cache hit/miss stats (the cacheable
 	// region of the previous request: all messages except the last one).
@@ -164,6 +176,7 @@ func New(prov provider.Provider, tools *tool.Registry, session *Session, opts Op
 		memoryDir:        opts.MemoryDir,
 		baseSystemPrompt: stripRepoMap(session.SystemPrompt),
 		repoMap:          opts.RepoMap,
+		todos:            opts.Todos,
 		hooks:            opts.Hooks,
 		asker:            opts.Asker,
 		checkpointer:     opts.Checkpointer,
@@ -184,17 +197,25 @@ func (a *Agent) SetSession(s *Session) {
 	a.blockedTurnStreak = 0
 }
 
-// refreshRepoMap re-renders the repo map when repository files changed and
-// swaps the updated block into the system prompt.
-func (a *Agent) refreshRepoMap(sess *Session) {
-	if a.repoMap == nil {
-		return
+// refreshContext re-renders the dynamic system-prompt sections (repo map and
+// todo list) and swaps in fresh blocks whenever they change.
+func (a *Agent) refreshContext(sess *Session) {
+	changed := false
+	if a.repoMap != nil {
+		if block, ch := a.repoMap.Refresh(); ch {
+			a.repoBlock = block
+			changed = true
+		}
 	}
-	block, changed := a.repoMap.Refresh()
-	if !changed || block == "" {
-		return
+	if a.todos != nil {
+		if block := a.todos.Summary(); block != a.todoBlock {
+			a.todoBlock = block
+			changed = true
+		}
 	}
-	sess.SetSystemPrompt(a.baseSystemPrompt + block)
+	if changed {
+		sess.SetSystemPrompt(a.baseSystemPrompt + a.repoBlock + a.todoBlock)
+	}
 }
 
 // stripRepoMap removes a trailing repo-map section (and everything after
@@ -270,7 +291,7 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 
 	sess.Add(provider.Message{Role: "user", Content: input})
 
-	a.refreshRepoMap(sess)
+	a.refreshContext(sess)
 
 	for step := 0; step < a.maxSteps; step++ {
 		if err := ctx.Err(); err != nil {
@@ -551,6 +572,14 @@ func (a *Agent) executeOne(ctx context.Context, tc provider.ToolCall) toolResult
 			result = result[:keep]
 		}
 		result += fmt.Sprintf("\n...[truncated: 原始输出 %d 字节，超出工具输出预算 %d 字节。请用更精确的参数缩小结果。]", original, a.maxToolOut)
+	}
+
+	if tc.Name == "todo_write" && err == nil {
+		note := result
+		if r := []rune(note); len(r) > 300 {
+			note = string(r[:300]) + "..."
+		}
+		a.sink.Emit(event.Event{Type: "notification", TextDelta: "📋 " + strings.TrimSpace(note)})
 	}
 
 	if a.hooks != nil {
