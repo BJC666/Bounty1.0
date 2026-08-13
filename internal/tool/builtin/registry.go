@@ -20,13 +20,17 @@ type ToolOptions struct {
 }
 
 func RegisterAll(reg *tool.Registry, opts ToolOptions) {
+	bgStore := NewBackgroundStore()
 	reg.Add(&BashTool{
 		Timeout:      opts.BashTimeout,
 		DockerRunner: opts.DockerBashRunner,
 		Sandbox:      opts.SandboxFunc,
 		PolicyCheck:  opts.BashPolicy,
 		SandboxStart: opts.BashSandboxStart,
+		Background:   bgStore,
 	})
+	reg.Add(&BashOutputTool{Store: bgStore})
+	reg.Add(&BashKillTool{Store: bgStore})
 	reg.Add(&ReadFileTool{})
 	reg.Add(&WriteFileTool{})
 	reg.Add(&EditFileTool{})
