@@ -17,6 +17,13 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+try:
+    import tomllib
+except ImportError:  # pragma: no cover - Python < 3.11
+    tomllib = None
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +55,86 @@ def save_json(path, obj):
 
 def model_slug(model):
     return model.replace("/", "__")
+
+
+# --- P7-1 健壮性：网络失败判定 / 错误口径分列 / API 健康预检 ---
+
+NETWORK_ERROR_MARKERS = (
+    "network error", "no such host", "dial tcp", "connection refused",
+    "connection reset", "lookup ", "temporary failure in name resolution",
+    "timed out", "request timeout", "http 429", "too many requests",
+    "http 500", "http 502", "http 503", "bad gateway", "service unavailable",
+)
+
+
+def is_network_failure(stderr, stdout=""):
+    """True 表示本次任务失败属于网络/DNS/服务端瞬断，可安全重试。"""
+    text = ((stderr or "") + " " + (stdout or "")).lower()
+    return any(m in text for m in NETWORK_ERROR_MARKERS)
+
+
+_TOOL_FAIL_MARKERS = (
+    "不是内部或外部命令", "系统找不到", "找不到文件", "no such file",
+    "拒绝访问", "access is denied", "permission denied",
+    "文件名、目录名或卷标语法不正确", "无法打开", "is not recognized",
+)
+
+
+def classify_tool_error(err):
+    """区分「工具调用失败」与「验证失败（bash 执行了测试/命令但结果非零）」。
+
+    - 含 --- FAIL / exit status 且无工具性特征 → verify（测试没通过，bash 本身正常）
+    - 其余（文件不存在/编码/权限/未知命令等）→ tool（工具调用本身失败）
+    """
+    e = (err or "").lower()
+    if "--- fail" in e:
+        return "verify"
+    if "exit status" in e and not any(m in e for m in _TOOL_FAIL_MARKERS):
+        return "verify"
+    return "tool"
+
+
+def parse_providers(config_path):
+    """从 eval bounty.toml 解析 {model: base_url}，用于健康预检。"""
+    if tomllib is None:
+        return {}
+    with open(config_path, "rb") as f:
+        data = tomllib.load(f)
+    out = {}
+    for prov in data.get("providers", []):
+        base = prov.get("base_url", "")
+        for m in prov.get("models", []):
+            out[f"{prov.get('name')}/{m}"] = base
+    return out
+
+
+def preflight_models(config_path, models, timeout=10):
+    """对每个模型 base_url 发轻量 GET /models：401/403/404=端点可达，网络异常=失败。
+
+    返回 True=全部可达（或无法解析的模型被跳过）；False=存在网络级失败。
+    """
+    urls = parse_providers(config_path)
+    unknown = [m for m in models if not urls.get(m)]
+    if unknown:
+        print(f"[preflight] WARN 未在 config 中找到 base_url，跳过探测：{unknown}")
+    ok = True
+    for m in models:
+        base = urls.get(m)
+        if not base:
+            continue
+        url = base.rstrip("/") + "/models"
+        try:
+            req = urllib.request.Request(
+                url, headers={"Authorization": "Bearer sk-preflight-invalid"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                print(f"[preflight] OK {m} ({base}) HTTP {resp.status}（端点可达）")
+        except urllib.error.HTTPError as e:
+            # 401/403/404 均说明端点可达（key 无效或被拒），预检通过
+            print(f"[preflight] OK {m} ({base}) HTTP {e.code}（端点可达）")
+        except Exception as e:
+            print(f"[preflight] FAIL {m} ({base}): {e}")
+            ok = False
+    return ok
 
 
 def ensure_binary(repo_root, force=False):
@@ -108,6 +195,7 @@ def parse_transcript(text):
             if ev.get("tool_err"):
                 tool_errors.append({
                     "tool": ev.get("tool_name"),
+                    "kind": classify_tool_error(ev.get("tool_err") or ""),
                     "err": (ev.get("tool_err") or "")[:300],
                 })
                 if first_error_step is None:
@@ -128,10 +216,28 @@ def parse_transcript(text):
         "tool_errors": tool_errors,
         "tools_used": tools_used,
         "n_tool_errors": len(tool_errors),
+        "tool_failures": sum(1 for e in tool_errors if e.get("kind") != "verify"),
+        "verify_failures": sum(1 for e in tool_errors if e.get("kind") == "verify"),
         "first_error_step": first_error_step,
         "turns_complete": turns_complete,
         "final_err": final_err,
     }
+
+
+def execute_task(cmd, cwd, timeout):
+    """运行一次 bounty 子进程；返回 (exit_code, timeout_flag, stdout, stderr)。"""
+    try:
+        r = subprocess.run(
+            cmd, cwd=str(cwd), timeout=timeout,
+            capture_output=True, env=os.environ.copy(),
+        )
+        return (r.returncode, False,
+                r.stdout.decode("utf-8", errors="replace"),
+                r.stderr.decode("utf-8", errors="replace"))
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or b"").decode("utf-8", errors="replace")
+        err = (e.stderr or b"").decode("utf-8", errors="replace")
+        return None, True, out, err
 
 
 def run_one(args, task, model, run_id, bounty_bin):
@@ -144,42 +250,40 @@ def run_one(args, task, model, run_id, bounty_bin):
         print(f"[skip] {model} {task['id']} (already ran)")
         return task["id"], model, None
 
-    if task_dir.exists():
-        shutil.rmtree(task_dir)
-    task_dir.mkdir(parents=True)
-    fixture = EVAL_DIR / "fixtures" / task["fixture"]
-    shutil.copytree(fixture, src, ignore=copy_ignore)
-    shutil.copytree(src, pristine, ignore=copy_ignore)
-    cfg_text = args.config.read_text(encoding="utf-8")
-    cfg_text = cfg_text.replace("__WORKSPACE_ROOT__", src.resolve().as_posix())
-    (src / "bounty.toml").write_text(cfg_text, encoding="utf-8")
+    retries = 0
+    while True:
+        if task_dir.exists():
+            shutil.rmtree(task_dir)
+        task_dir.mkdir(parents=True)
+        fixture = EVAL_DIR / "fixtures" / task["fixture"]
+        shutil.copytree(fixture, src, ignore=copy_ignore)
+        shutil.copytree(src, pristine, ignore=copy_ignore)
+        cfg_text = args.config.read_text(encoding="utf-8")
+        cfg_text = cfg_text.replace("__WORKSPACE_ROOT__", src.resolve().as_posix())
+        (src / "bounty.toml").write_text(cfg_text, encoding="utf-8")
 
-    cmd = [
-        str(bounty_bin), "run", task["prompt"],
-        "--json", "--model=" + model, "--max-steps=" + str(args.max_steps),
-    ]
-    for img in task.get("images") or []:
-        img_path = EVAL_DIR / img
-        cmd.append("--image=" + str(img_path))
-    started = time.time()
-    timeout = False
-    exit_code = None
-    stdout = ""
-    stderr = ""
-    try:
-        r = subprocess.run(
-            cmd, cwd=str(src), timeout=args.timeout,
-            capture_output=True, env=os.environ.copy(),
-        )
-        exit_code = r.returncode
-        stdout = r.stdout.decode("utf-8", errors="replace")
-        stderr = r.stderr.decode("utf-8", errors="replace")
-    except subprocess.TimeoutExpired as e:
-        timeout = True
-        stdout = (e.stdout or b"").decode("utf-8", errors="replace")
-        stderr = (e.stderr or b"").decode("utf-8", errors="replace")
+        cmd = [
+            str(bounty_bin), "run", task["prompt"],
+            "--json", "--model=" + model, "--max-steps=" + str(args.max_steps),
+        ]
+        for img in task.get("images") or []:
+            img_path = EVAL_DIR / img
+            cmd.append("--image=" + str(img_path))
+        started = time.time()
+        exit_code, timeout, stdout, stderr = execute_task(cmd, src, args.timeout)
+        wall = round(time.time() - started, 1)
 
-    wall = round(time.time() - started, 1)
+        # P7-1：网络/DNS/服务端瞬断导致的失败自动重试（模型行为失败不重试）
+        retryable = (exit_code != 0 and not timeout
+                     and retries < args.max_retries
+                     and is_network_failure(stderr, stdout))
+        if retryable:
+            retries += 1
+            print(f"[retry] {model} {task['id']} attempt={retries} "
+                  f"reason={stderr.strip()[:120] or stdout.strip()[:120]}")
+            continue
+        break
+
     metrics = parse_transcript(stdout)
     result = {
         "task_id": task["id"],
@@ -193,6 +297,7 @@ def run_one(args, task, model, run_id, bounty_bin):
         "timeout": timeout,
         "wall_seconds": wall,
         "max_steps": args.max_steps,
+        "retried": retries,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         **metrics,
     }
@@ -204,6 +309,23 @@ def run_one(args, task, model, run_id, bounty_bin):
           f"tok={metrics['input_tokens'] + metrics['output_tokens']} "
           f"toolerr={metrics['n_tool_errors']} wall={wall}s {status}")
     return task["id"], model, result
+
+
+def find_failed_tasks(work_dir, run_id, models):
+    """扫描 <work>/<run_id>/<slug>/*/run.json，返回运行级失败任务 id 集合。"""
+    failed = set()
+    for slug in {model_slug(m) for m in models}:
+        base = work_dir / run_id / slug
+        if not base.exists():
+            continue
+        for rj in sorted(base.glob("*/run.json")):
+            try:
+                d = load_json(rj)
+            except Exception:
+                continue
+            if d.get("exit_code") not in (0, None) or d.get("timeout"):
+                failed.add(d.get("task_id"))
+    return failed
 
 
 def main():
@@ -219,6 +341,12 @@ def main():
     ap.add_argument("--run-id", default=datetime.now().strftime("%Y%m%d-%H%M%S"))
     ap.add_argument("--rebuild", action="store_true")
     ap.add_argument("--redo", action="store_true", help="re-run tasks that already have results")
+    ap.add_argument("--no-health-check", action="store_true",
+                    help="skip the API endpoint preflight probe")
+    ap.add_argument("--max-retries", type=int, default=2,
+                    help="auto-retry count for network/DNS failures (default 2)")
+    ap.add_argument("--redo-failed", type=str, default=None, metavar="RUN_ID",
+                    help="re-run tasks that failed (exit!=0 or timeout) in an earlier run dir")
     args = ap.parse_args()
 
     data = load_json(args.tasks)
@@ -227,8 +355,21 @@ def main():
     ids = [i.strip() for i in args.task_ids.split(",") if i.strip()]
     if ids:
         tasks = [t for t in tasks if t["id"] in ids]
+
+    if args.redo_failed:
+        # 从旧 run 目录挑出运行级失败任务（exit!=0 或 timeout），映射回 tasks.json
+        failed_ids = find_failed_tasks(args.work, args.redo_failed, models)
+        if not failed_ids:
+            sys.exit(f"redo-failed: {args.redo_failed} 下没有运行级失败任务")
+        tasks = [t for t in tasks if t["id"] in failed_ids]
+        print(f"[redo-failed] {args.redo_failed} -> 重跑 {len(tasks)} 个失败任务: {sorted(failed_ids)}")
+
     if not tasks:
         sys.exit("no tasks selected")
+
+    if not args.no_health_check:
+        if not preflight_models(args.config, models):
+            sys.exit("preflight FAIL: 模型端点不可达。确认网络/代理后重试，或用 --no-health-check 跳过。")
 
     bounty_bin = ensure_binary(REPO_ROOT, force=args.rebuild)
     args.work.mkdir(parents=True, exist_ok=True)

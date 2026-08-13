@@ -44,7 +44,10 @@ def stats(rows):
         vals = [r.get(key) for r in rows if isinstance(r.get(key), (int, float))]
         return sum(vals) / len(vals) if vals else 0.0
     calls = sum(r.get("tool_calls") or 0 for r in rows)
-    errs = sum(r.get("n_tool_errors") or 0 for r in rows)
+    # P7-1 口径分列：新 run 有 tool_failures/verify_failures；旧 run 缺失时按老口径
+    # （全部计入工具调用失败，保持历史数值不变）。
+    tool_fails = sum(r.get("tool_failures", r.get("n_tool_errors") or 0) for r in rows)
+    verify_fails = sum(r.get("verify_failures") or 0 for r in rows)
     return {
         "total": len(rows),
         "passed": sum(1 for r in rows if r.get("verdict")),
@@ -52,7 +55,8 @@ def stats(rows):
         "avg_in_tok": avg("input_tokens"),
         "avg_out_tok": avg("output_tokens"),
         "avg_wall": avg("wall_seconds"),
-        "tool_err_rate": (100.0 * errs / calls) if calls else 0.0,
+        "tool_err_rate": (100.0 * tool_fails / calls) if calls else 0.0,
+        "verify_fail_rate": (100.0 * verify_fails / calls) if calls else 0.0,
         "self_heal_rate": self_heal_rate(rows),
         "timeouts": sum(1 for r in rows if r.get("timeout")),
         "crashes": sum(1 for r in rows if not r.get("timeout") and not r.get("verdict") and "异常退出" in (r.get("reason") or "")),
@@ -61,7 +65,7 @@ def stats(rows):
 
 def self_heal_rate(rows):
     """P2-3 指标：出现过工具错误的任务中，最终判定通过的比例（首轮失败后自愈）。"""
-    erred = [r for r in rows if (r.get("n_tool_errors") or 0) > 0]
+    erred = [r for r in rows if (r.get("tool_failures", r.get("n_tool_errors") or 0)) > 0]
     if not erred:
         return 0.0
     healed = sum(1 for r in erred if r.get("verdict"))
@@ -80,8 +84,8 @@ def build_report(run_id, models):
 
     add("## 总览")
     add("")
-    add("| 模型 | pass@1 | A | B | C | D | E | 平均步数 | 平均输入 tok | 平均输出 tok | 工具失败率 | 自愈率 | 超时数 |")
-    add("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    add("| 模型 | pass@1 | A | B | C | D | E | 平均步数 | 平均输入 tok | 平均输出 tok | 工具调用失败率 | 验证失败率 | 自愈率 | 超时数 |")
+    add("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for model in sorted(models):
         cats = models[model]
         all_rows = [r for v in cats.values() for r in v]
@@ -92,22 +96,25 @@ def build_report(run_id, models):
             f"| {pct(a['passed'], a['total'])} | {pct(b['passed'], b['total'])} | {pct(c['passed'], c['total'])} "
             f"| {pct(d['passed'], d['total'])} | {pct(e['passed'], e['total'])} "
             f"| {s['avg_steps']:.1f} | {s['avg_in_tok']:.0f} | {s['avg_out_tok']:.0f} "
-            f"| {s['tool_err_rate']:.1f}% | {s['self_heal_rate']:.1f}% | {s['timeouts']} |")
+            f"| {s['tool_err_rate']:.1f}% | {s['verify_fail_rate']:.1f}% "
+            f"| {s['self_heal_rate']:.1f}% | {s['timeouts']} |")
     add("")
 
     for model in sorted(models):
         cats = models[model]
         add(f"## 模型 {model}")
         add("")
-        add("| 任务 | 类别 | 判定 | 步数 | 输入 tok | 输出 tok | 工具失败 | 用时(s) | 原因/备注 |")
+        add("| 任务 | 类别 | 判定 | 步数 | 输入 tok | 输出 tok | 工具失败(t/v) | 用时(s) | 原因/备注 |")
         add("|---|---|---|---|---|---|---|---|---|")
         for cat in ("A", "B", "C", "E"):
             for r in sorted(cats.get(cat, []), key=lambda x: x["task_id"]):
                 mark = "通过" if r["verdict"] else "失败"
                 reason = (r.get("reason") or "")[:80].replace("|", "/")
+                tf = r.get("tool_failures", r.get("n_tool_errors") or 0)
+                vf = r.get("verify_failures") or 0
                 add(f"| {r['task_id']} {r['title']} | {CATEGORY_NAMES[cat]} | {mark} "
                     f"| {r.get('steps')} | {r.get('input_tokens')} | {r.get('output_tokens')} "
-                    f"| {r.get('n_tool_errors')} | {r.get('wall_seconds')} | {reason} |")
+                    f"| {tf}/{vf} | {r.get('wall_seconds')} | {reason} |")
         add("")
 
     add("## 失败明细")

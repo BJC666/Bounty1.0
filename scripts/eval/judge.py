@@ -259,9 +259,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", type=Path, required=True)
     ap.add_argument("--tasks", type=Path, default=EVAL_DIR / "tasks.json")
+    ap.add_argument("--list-failed", action="store_true",
+                    help="只打印判定失败的任务 id（逗号分隔），供 runner --redo-failed 组合重跑")
     args = ap.parse_args()
 
     tasks = {t["id"]: t for t in load_json(args.tasks)["tasks"]}
+    failed_ids = []
     for model_dir in sorted(args.run.iterdir()):
         if not model_dir.is_dir() or model_dir.name.startswith("."):
             continue
@@ -277,6 +280,10 @@ def main():
             save_json(task_dir / "judge.json", result)
             mark = "PASS" if result["verdict"] else "FAIL"
             print(f"[{mark}] {result['model']} {result['task_id']} {result['reason']}")
+            if not result["verdict"]:
+                failed_ids.append(result["task_id"])
+    if args.list_failed:
+        print("FAILED_IDS=" + ",".join(sorted(set(failed_ids))))
 
 
 if __name__ == "__main__":
