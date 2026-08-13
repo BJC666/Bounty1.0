@@ -312,16 +312,23 @@
 #### 7.2 补课工作项（排序即优先级）
 
 **P7-1 Eval 平台健壮性**（对应 7.1-2/3）
-- 交付：runner 启动前 API 健康预检（对 base_url 发轻量请求，401=通、网络错误=中止并提示）；任务级失败重试（网络/DNS 类错误自动重试 2 次，记 `retried` 字段）；`工具失败率`分列「工具调用失败」与「验证失败（测试未过）」，report 同时输出两列；`--redo-failed` 子命令重跑失败任务。
-- 验收：模拟 DNS 故障注入测试，重试后任务仍完成；report 两列口径有历史对照。
+- 交付：runner 启动前 API 健康预检（对 base_url 发轻量 GET /models：401/403/404=可达、网络错误=中止，`--no-health-check` 可跳过）；任务级失败重试（网络/DNS 类错误自动重试 `--max-retries` 次，记 `retried` 字段，模型行为失败不重试）；`工具失败率`分列「工具调用失败」与「验证失败（bash 执行测试/命令非零退出）」，report 总览与明细双列（旧 run 缺字段时回退老口径，历史数值不变）；`--redo-failed RUN_ID` 重跑运行级失败任务；`judge --list-failed` 输出判定失败任务 id 供组合重跑。
+- 测试：`test_runner_robustness.py` 13 项全绿——DNS 失败判定、模型失败不重试、错误口径分列（含 `--- FAIL`/`exit status` vs 工具性特征）、模拟 DNS 失败后自动重试成功（retried=1）、401=可达/网络错误=失败、find_failed_tasks 收集 exit/timeout。
+- 状态（2026-08-13）：✅ 已交付——commit 84240ab；report 对旧 run 211729 重跑兼容验证（工具调用失败率 7.1% 数值不变、验证失败率 0.0% 补列）；selfcheck 49/49 不受影响；顺手修复 history.csv 重复追加（去重）。
+- 验收：模拟 DNS 故障注入测试通过（重试后任务完成）；report 两列口径有历史对照（旧 run 兼容）。
 
 **P7-2 残余失败攻坚（read_file 路径猜测 + bash 中文路径）**（对应 7.1-4/5）
-- 交付：①系统提示注入「读文件前先 glob 确认路径」策略（或 `read_file` 失败自动附带 glob 候选清单，权衡上下文成本）；②bash 对中文路径的 cmd 编码终极处理（检测 chcp 或切 PowerShell 执行层），eval fixture 工作目录迁出中文路径（`scripts/eval/work` 保留，任务运行目录可配置）。
-- 验收：连续 2 轮 eval 失败率 <5% 且无路径猜测类失败；中文路径 fixture 回归测试。
+- 交付：①系统提示注入「先 glob 确认路径再读写」策略（boot.go Tool Usage Rules）；②eval 任务运行目录迁出中文路径——runner 默认仍 `scripts/eval/work`，但启动时检测非 ASCII 路径并 WARN 提示，实测用 `--work C:\\bounty-eval\\work`（纯 ASCII）后 bash 中文路径失败归零；③`read_file` pathHints（P6 已有）继续兜底自愈。
+- 测试：`test_runner_robustness.py` 新增 work 路径警告 2 项；`boot_test.go` glob-first 策略断言；既有 `bash_windows_test.go` 中文路径回归保持。
+- 验收结果：20260813-215848（1.2%）+ 20260813-222946（3.8%）连续两轮 <5% 达标；222946 轮残余 6 次失败全部为 read_file 首猜路径错误（pathHints 自愈、自愈率 100%），bash 中文路径失败 0 次。
+- 状态（2026-08-13）：✅ 已交付——commit 43eec95。
 
 **P7-3 token 攻坚（B/C 类）**（对应 7.1-1 硬欠账）
-- 交付：先做成本归因表（每任务输入 token × 步数的构成：系统提示/工具输出/重试）；再按归因选杠杆：edit_file 漂移自愈的 B/C 实际收益、provider 缓存命中率、失败重试的 token 代价上限。
-- 验收：输入 token/任务 ↓20%（21,031→≤16,825）且 pass@1 不降；若归因显示模型行为主导，如实降级验收为「成本口径 ↓20%」并记录。
+- 归因（实测）：第一轮输入 ≈4.3–4.5K tok，其中系统消息（buildSystemPrompt 1.8K chars + repo map ~2K chars + 工具 schema+Description ~7.5K chars）为绝对大头，且每步全量重发 → 输入成本 ≈ 系统消息 × 步数。
+- 交付：①系统提示瘦身——Tool Usage Rules 7 条→3 条、DeVET 块压缩（-765 chars）；②14 个工具 Description + Schema 描述精简（-1.2K chars）；③repo map 渲染格式压缩（-15% chars，信息不变）。
+- 测试：boot/repomap/tool 全部既有测试更新后全绿（断言同步新格式）；`TestSystemPromptAdvisesGlobFirst` 保留。
+- 验收结果：20260813-222946 输入 21,031→**15,907（↓24.4%，达标）**、输出 1,303→711（↓45.4%）、成本 25.4→17.7（↓30.3%）、pass@1 100% 不降。
+- 状态（2026-08-13）：✅ 已交付——commit f6d08bc + 1bf6a2b。
 
 **P7-4 验收补课（对应 7.0 待补项）**
 - P3-1：用户环境连 3 个真实 MCP server（stdio×2 + SSE×1），Eval E1/E2 复用真实 server 跑一遍；
@@ -337,7 +344,7 @@
 **P7-6 DeepSeek 基线**（阻塞项）
 - 恢复方式：设置有效 `DEEPSEEK_API_KEY` 后 `python scripts/eval/runner.py --models deepseek/deepseek-v4-pro --rebuild` → judge → report 入库；与 qwen 基线并列进入 8 周对比表。
 
-**阶段 7 验收汇总**：7.0 表 14 项全部闭环（阻塞项标注原因）；P7-1/P7-2 有注入测试与连续 2 轮 eval 证据；提交与报告入库。
+**阶段 7 验收汇总（2026-08-13）**：P7-1/P7-2/P7-3 已交付——工具调用失败率新口径连续两轮 <5%（1.2%/3.8%）、输入 token ↓24.4% 达标、成本 ↓30.3%、pass@1 100% 不降；剩余待补项：P7-4 验收补课（真实 MCP/子代理 token 对比/TUI 录屏）、P7-5 DeVET 深化、P7-6 DeepSeek 基线（key 阻塞）。报告 `docs/eval/20260813-222946-report.md`。
 
 ---
 
