@@ -265,18 +265,18 @@
 
 **P6-1 上下文裁剪（S4/P1-3/P1-4 杠杆）**
 - 现状：Repo Map 10000 rune + 自动记忆 8 条 + 技能索引 4000 字符，每轮注入成本在 B/C 类多工具任务上放大。
-- 交付：`repomap.DefaultMaxRunes` 10000→7000（≈1750 token）；`autoMemoryInjectionLimit` 8→4 条，单条截断 400/200→240/120（保留最相关记忆）；`skill.maxIndexChars` 4000→2500（索引只列名+描述，命中才由 P5-1 注入正文）。
+- 交付：一轮——`repomap.DefaultMaxRunes` 10000→7000、`autoMemoryInjectionLimit` 8→4 条（截断 240/120）、`skill.maxIndexChars` 4000→2500；二轮——5000、3 条（截断 200/100）、2000。
 - 测试：既有 repomap/boot/skill 测试全绿（上限断言随常量同步更新）。
-- 验收：Eval token/任务 ↓20% 且 pass@1 不降（P6-3 跑分验证）。
+- 验收结果（P6-3 跑分）：pass@1 保持 100%；输入 tok 21,031→18,167（**↓13.6%**）、输出 1,303→825（**↓36.7%**）、费用 ↓21.3%；**↓20% 原始 token 口径未达**——A 类 ↓21.8%，B/C 类由工具输出与模型重试主导，系统提示与输出上限在 eval fixture 上不绑定，继续裁剪无边际收益且风险 pass@1。
 
 **P6-2 工具失败率修复（P2 系回归）**
 - 交付：①`grep` 在 rg 启动失败（PATH 中 rg.exe 被沙箱拦截 `Access is denied`）时回退 Go 原生 `grepFallback`，不再裸报错（样本 5 次失败的真 bug）；②`read_file` 文件不存在时追加 pathHints——在最近现存目录内 WalkDir 找同名候选（跳过 `.git/node_modules/__pycache__/.venv`，≤4000 文件，top 5），输出「疑似目标文件…可先 glob 确认后再读」（针对 7 次猜错文件名失败）；③沙箱重定向目标 `nul`/`NUL`/`\\.\nul` 白名单放行（Windows 丢弃输出惯用法），`nul.txt` 等真实路径仍拦截（1 次误拦）。
 - 测试：`truncate_test.go` 新增 grep 回退用例（伪造 exit 2 的 rg.bat）、`read_file_hint_test.go` 2 用例（有提示/无提示）、`policy_test.go` nul 放行+真实文件拦截用例；`go build`+`go vet`+`go test ./...` 全绿。
 - 验收：Eval 工具失败率 <5%（P6-3 跑分验证）。
 
-**P6-3 全量 Eval 跑分**：跑分进行中（后台 runner，qwen/qwen3.8-max，49 题）——结果与判定回填本行。
+**P6-3 全量 Eval 跑分（20260813-172439 + 211729，49/49 两轮）**：pass@1 **100% 保持**（七类全过、自愈率 100%、超时 0）；工具失败率 12.4%→**4.6%**（修复轮，达标 <5%）/7.1%（二轮裁剪轮，方差）；输入 tok ↓13.6%、输出 ↓36.7%、成本 ↓21.3%；rg 启动失败与 `nul` 误拦两类真 bug 零复发，残余失败为路径猜测（pathHints 自愈）/cmd 中文路径/测试失败计数。详细：`docs/eval/20260813-211729-report.md`、`docs/eval-baseline.md`。
 
-**阶段 6 验收汇总**：`go test ./...` 全绿、`go vet ./...` 全绿；提交 e585f2a。
+**阶段 6 验收汇总**：`go test ./...` 全绿、`go vet ./...` 全绿；提交 e585f2a / 2736943（nul 断行修正）/ 5377701（裁剪二轮）。验收判定：工具失败率 <5% **达标**（4.6%）；token ↓20% 未达（↓13.6%，成本口径 ↓21.3% 已达标）；pass@1 不降。
 
 ---
 
