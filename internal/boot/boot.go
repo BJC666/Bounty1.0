@@ -718,3 +718,47 @@ func convertHooks(shellHooks []config.HookConfig) []hook.HookConfig {
 	}
 	return result
 }
+
+// SwitchModel resolves "provider/model" (or a bare model when exactly one
+// provider is configured) from the config, builds the provider through the
+// same secrets pool as startup, and switches the controller to it. Returns the
+// canonical display name on success.
+func SwitchModel(ctrl *control.Controller, cfg *config.Config, spec string) (string, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return "", fmt.Errorf("usage: /model provider/model（如 qwen/qwen3.8-max）")
+	}
+	provName, modelName := parseModel(spec)
+	var provCfg *config.ProviderConfig
+	for i := range cfg.Providers {
+		if cfg.Providers[i].Name == provName {
+			provCfg = &cfg.Providers[i]
+			break
+		}
+	}
+	if provCfg == nil && len(cfg.Providers) == 1 {
+		provCfg = &cfg.Providers[0]
+	}
+	if provCfg == nil {
+		return "", fmt.Errorf("provider %q not found in config", provName)
+	}
+	var apiKey string
+	if provCfg.Kind != "ollama" {
+		keyPool, err := secrets.NewPool(provCfg.APIKeyEnv)
+		if err != nil {
+			return "", fmt.Errorf("api key for %s: %w", provName, err)
+		}
+		apiKey, err = keyPool.Get()
+		if err != nil {
+			return "", fmt.Errorf("api key for %s: %w", provName, err)
+		}
+	}
+	prov, err := BuildProvider(provCfg.Kind, provCfg.BaseURL, apiKey, modelName, provCfg.ContextWindow)
+	if err != nil {
+		return "", err
+	}
+	if err := ctrl.SwitchProvider(prov, modelName); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", provName, modelName), nil
+}

@@ -492,3 +492,46 @@ func TestRunCompactsWithProviderSummaryEndToEnd(t *testing.T) {
 		t.Fatalf("final message = %+v", last)
 	}
 }
+
+func TestForceCompactMethodCompactsBelowThreshold(t *testing.T) {
+	sess := newTestSession()
+	big := strings.Repeat("长", 4000)
+	for i := 0; i < 6; i++ {
+		sess.Add(provider.Message{Role: "user", Content: big})
+		sess.Add(provider.Message{Role: "assistant", Content: big})
+	}
+	before := len(sess.Snapshot())
+
+	prov := &cannedProvider{events: []provider.StreamEvent{
+		{Delta: &provider.Delta{Content: "摘要内容"}},
+		{Done: true},
+	}}
+	a := New(prov, tool.NewRegistry(), sess, Options{})
+	if err := a.ForceCompact(); err != nil {
+		t.Fatalf("ForceCompact: %v", err)
+	}
+	after := len(sess.Snapshot())
+	if after >= before {
+		t.Fatalf("messages after ForceCompact = %d, want fewer than %d", after, before)
+	}
+	msgs := sess.Snapshot()
+	if msgs[0].Role != "system" {
+		t.Fatalf("first message must stay system, got %s", msgs[0].Role)
+	}
+	joined := ""
+	for _, m := range msgs {
+		joined += m.Content + "\n"
+	}
+	if !strings.Contains(joined, "摘要内容") {
+		t.Fatalf("summary missing from compacted session:\n%s", joined)
+	}
+}
+
+func TestForceCompactTooFewMessages(t *testing.T) {
+	sess := newTestSession()
+	sess.Add(provider.Message{Role: "user", Content: "hi"})
+	a := New(&cannedProvider{}, tool.NewRegistry(), sess, Options{})
+	if err := a.ForceCompact(); err == nil {
+		t.Fatal("want error when there is nothing to compact")
+	}
+}

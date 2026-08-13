@@ -35,9 +35,18 @@ func StartOrConnect(ctx context.Context, devetDir string) (*Backend, error) {
 		return nil, fmt.Errorf("DeVET backend not found at %s and not running — install DeVET first", serverPath)
 	}
 
-	pythonBin := "python3"
-	if _, err := exec.LookPath("python3"); err != nil {
-		pythonBin = "python"
+	// On Windows, python3.exe may be a Store stub that LookPath finds but
+	// cannot actually execute; probe each candidate with --version and pick
+	// the first real interpreter.
+	pythonBin := ""
+	for _, candidate := range []string{"python", "python3"} {
+		if path, err := exec.LookPath(candidate); err == nil && probePython(path) {
+			pythonBin = path
+			break
+		}
+	}
+	if pythonBin == "" {
+		return nil, fmt.Errorf("python 3 not found on PATH — install Python to use DeVET tools")
 	}
 	cmd := exec.CommandContext(ctx, pythonBin, serverPath)
 	cmd.Dir = filepath.Join(devetDir, "backend")
@@ -55,6 +64,13 @@ func StartOrConnect(ctx context.Context, devetDir string) (*Backend, error) {
 	cmd.Process.Kill()
 	cmd.Wait()
 	return nil, fmt.Errorf("DeVET backend started but not responding after 6s")
+}
+
+// probePython verifies a python candidate actually runs (guards against the
+// Windows Store python3.exe alias stub, which exists on PATH but exits 9009).
+func probePython(bin string) bool {
+	out, err := exec.Command(bin, "--version").CombinedOutput()
+	return err == nil && len(out) > 0
 }
 
 // devetClient carries a short timeout so a stalled local backend cannot hang

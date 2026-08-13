@@ -141,13 +141,41 @@ func (a *Agent) maybeCompact(ctx context.Context, sess *Session) {
 	a.compactWithConfig(ctx, sess, a.effectiveCompactConfig())
 }
 
-// compactWithConfig rewrites the session as system + model-generated summary +
-// tail when the estimated token count crosses the threshold. On summarizer
-// failure it falls back to the legacy placeholder-drop so the context still
-// shrinks.
+// ForceCompact compacts the session immediately, bypassing the token threshold
+// (used by the /compact TUI command). It follows the exact same rewrite path
+// as automatic compaction.
+func (a *Agent) ForceCompact() error {
+	cfg := a.effectiveCompactConfig()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*summaryCallTimeout)
+	defer cancel()
+	res := a.compactNow(ctx, a.Session(), cfg)
+	if !res.Compacted {
+		return fmt.Errorf("nothing to compact (need more than 2 messages)")
+	}
+	return nil
+}
+
+// compactWithConfig merges defaults, then compacts only when the estimated
+// token count crosses the threshold.
 func (a *Agent) compactWithConfig(ctx context.Context, sess *Session, cfg CompactConfig) CompactResult {
-	res := CompactResult{}
 	cfg = mergeCompactConfig(defaultCompactConfig(), cfg)
+	msgs := sess.Snapshot()
+	if len(msgs) <= 2 {
+		return CompactResult{}
+	}
+	tokens := estimateTokens(msgs)
+	threshold := int(float64(cfg.MaxContext) * cfg.Ratio)
+	if tokens < threshold {
+		return CompactResult{BeforeTokens: tokens}
+	}
+	return a.compactNow(ctx, sess, cfg)
+}
+
+// compactNow rewrites the session as system + model-generated summary + tail.
+// On summarizer failure it falls back to the legacy placeholder-drop so the
+// context still shrinks.
+func (a *Agent) compactNow(ctx context.Context, sess *Session, cfg CompactConfig) CompactResult {
+	res := CompactResult{}
 	msgs := sess.Snapshot()
 	if len(msgs) <= 2 {
 		return res
@@ -155,12 +183,7 @@ func (a *Agent) compactWithConfig(ctx context.Context, sess *Session, cfg Compac
 
 	tokens := estimateTokens(msgs)
 	res.BeforeTokens = tokens
-	threshold := int(float64(cfg.MaxContext) * cfg.Ratio)
 	forceThreshold := int(float64(cfg.MaxContext) * cfg.ForceRatio)
-
-	if tokens < threshold {
-		return res
-	}
 
 	// PreCompact hook notification (fire-and-forget semantics).
 	if hooks, ok := a.hooks.(CompactHooks); ok {

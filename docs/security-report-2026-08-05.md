@@ -124,3 +124,13 @@
 - model 覆盖：子代理换模型走 boot 的 ProvFactory，密钥仍从同一 `secrets` 池读取、不落盘不打印；未配置 factory 时明确拒绝，不存在静默降级到父 provider 的歧义。
 - 结构化摘要：父代理消费的仅是子代理产出的三节摘要（结论上限 1200 rune），子代理原始输出不进入父上下文，间接缩小了恶意长输出的注入面。
 - 已知边界：explore/general 仅控制工具集过滤与提示词，不构成权限边界（写路径仍由父 agent 的 gate/sandbox 在工具执行层统一把关）；子代理模型覆盖依赖配置中可信 provider 定义。
+
+# 2026-08-13 增补：P3-5 TUI 打磨 + Slash 命令（安全边界）
+
+- 权限确认弹窗（tuiAsker）：TUI 内敏感操作决策内联呈现，数字键选择方案、Esc 一律视为拒绝、请求 ctx 超时自动清空——决策不落盘、不缓存，权限门语义不变弱。
+- `/model` 切换：boot.SwitchModel 只能切到配置内已定义的 provider（裸名时走默认 provider 家族），密钥仍从 `secrets` 池读取，不打印、不落盘；未定义 provider 明确报错。
+- `/export`：仅导出会话文本到显式给定路径（默认当前目录 `会话名.md`），不携带密钥（事件流中密钥本就遮蔽）；不执行任何生成内容。
+- 工具折叠面板/diff 渲染：仅前端呈现层改动，对输出裁剪（≤32KB→面板≤8 行）只减不增，不扩大日志暴露面。
+- **DeVET 后端启动加固（launcher.go）**：此前 `python3` 仅做 LookPath，Windows 上 `WindowsApps\python3.exe` 是 Store 存根（可枚举、不可执行），会以「系统找不到路径」失败；现改为对 `python`/`python3` 候选逐一实测 `--version`，仅执行验证为真的解释器——消除「路径解析与执行不一致」这类 confused-execution 场景的入口。
+- 测试加固（sandbox）：Job Object 回收测试的子进程改用唯一命名的 ping 副本，杜绝与其他包并行测试的进程串扰误判。
+- 已知边界：`chat --help` 此前在无 TTY 管道下会直接进入 TUI 挂起（可用性缺陷，非越权），已补 help 短路；TUI 交互键位与录屏验收部分未完成，不影响权限语义。

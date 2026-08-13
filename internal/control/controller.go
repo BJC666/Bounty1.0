@@ -226,3 +226,20 @@ func (c *Controller) CheckpointRestorer() checkpoint.Restorer {
 	defer c.mu.Unlock()
 	return c.restorer
 }
+
+// ForceCompact triggers immediate context compaction on the underlying agent
+// (used by the /compact TUI command). Returns an error when unsupported.
+func (c *Controller) ForceCompact() error {
+	if ag, ok := c.runner.(interface{ ForceCompact() error }); ok {
+		return ag.ForceCompact()
+	}
+	return fmt.Errorf("force compact unavailable")
+}
+
+// Skills lists the indexed skills for the /skills TUI command.
+func (c *Controller) Skills() []skill.IndexEntry {
+	if c.skills == nil {
+		return nil
+	}
+	return c.skills.Index()
+}

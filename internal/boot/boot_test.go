@@ -6,11 +6,15 @@ import (
 	"strings"
 	"testing"
 
+	"bounty/internal/agent"
 	"bounty/internal/config"
+	"bounty/internal/control"
+	"bounty/internal/event"
 	"bounty/internal/memory"
 	"bounty/internal/plugin"
 	"bounty/internal/skill"
 	"bounty/internal/store"
+	"bounty/internal/tool"
 )
 
 func TestBuildSystemPromptInjectsAutoMemory(t *testing.T) {
@@ -117,5 +121,48 @@ func TestBuildSystemPromptNoAutoMemory(t *testing.T) {
 	prompt := buildSystemPrompt(cfg, "test-model", nil, []skill.IndexEntry{}, plugin.NewCommandStore())
 	if !strings.Contains(prompt, "## Auto Memory") {
 		t.Error("section should still exist when empty")
+	}
+}
+
+func TestSwitchModelResolvesConfiguredProvider(t *testing.T) {
+	t.Setenv("TEST_SWITCH_KEY", "sk-test")
+	cfg := &config.Config{
+		Providers: []config.ProviderConfig{
+			{Name: "test", Kind: "openai", BaseURL: "http://127.0.0.1:1/v1", APIKeyEnv: "TEST_SWITCH_KEY", ContextWindow: 32000},
+		},
+		DefaultModel: "test/base",
+	}
+	ag := agent.New(nil, tool.NewRegistry(), agent.NewSession("You are Bounty running on **base**"), agent.Options{})
+	ctrl := control.New(ag, event.Discard, nil, nil, nil, nil, nil, nil, "s1")
+
+	name, err := SwitchModel(ctrl, cfg, "test/qwen3")
+	if err != nil {
+		t.Fatalf("SwitchModel: %v", err)
+	}
+	if name != "test/qwen3" {
+		t.Fatalf("name = %q", name)
+	}
+	if sess := ctrl.AgentSession(); sess == nil || !strings.Contains(sess.SystemPrompt, "qwen3") {
+		t.Fatalf("session system prompt not updated: %v", sess)
+	}
+}
+
+func TestSwitchModelUnknownProvider(t *testing.T) {
+	cfg := &config.Config{Providers: []config.ProviderConfig{
+		{Name: "a", Kind: "openai", BaseURL: "http://127.0.0.1:1/v1", APIKeyEnv: "TEST_SWITCH_KEY"},
+		{Name: "b", Kind: "openai", BaseURL: "http://127.0.0.1:1/v1", APIKeyEnv: "TEST_SWITCH_KEY"},
+	}}
+	ag := agent.New(nil, tool.NewRegistry(), agent.NewSession("system"), agent.Options{})
+	ctrl := control.New(ag, event.Discard, nil, nil, nil, nil, nil, nil, "s1")
+	if _, err := SwitchModel(ctrl, cfg, "nope/model"); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("err = %v, want provider not found", err)
+	}
+}
+
+func TestSwitchModelEmptySpec(t *testing.T) {
+	ag := agent.New(nil, tool.NewRegistry(), agent.NewSession("system"), agent.Options{})
+	ctrl := control.New(ag, event.Discard, nil, nil, nil, nil, nil, nil, "s1")
+	if _, err := SwitchModel(ctrl, &config.Config{}, "  "); err == nil {
+		t.Fatal("empty spec must fail")
 	}
 }

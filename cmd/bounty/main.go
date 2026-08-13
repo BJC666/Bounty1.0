@@ -30,6 +30,9 @@ func main() {
 		os.Exit(1)
 	}
 	switch os.Args[1] {
+	case "help", "--help", "-h":
+		fmt.Print(rootUsage)
+		return
 	case "chat":
 		chatCmd()
 	case "run":
@@ -48,7 +51,40 @@ func main() {
 	}
 }
 
+const chatUsage = `Bounty Chat TUI（终端交互界面）
+
+用法:
+  bounty chat                新建会话进入 TUI
+  bounty chat --resume <id>  恢复指定会话
+  bounty chat --list         列出最近会话后退出
+
+TUI 按键:
+  Enter        发送；Shift+Enter 换行
+  Alt+↑/Alt+↓  上一条 / 下一条输入历史
+  ↑/↓ 滚动输出，PgUp/PgDown/Home/End 快速滚动
+  e            展开最近一次工具调用的参数与结果
+  E            展开 / 折叠全部工具调用
+  Esc          清除当前输入（工具弹窗中为拒绝）
+  数字键        在权限确认弹窗中选择方案
+
+斜杠命令:
+  /status              会话状态（模型 / token / 轮次 / 工具数）
+  /model [provider/model]  查看或切换模型（如 openai/deepseek-chat）
+  /compact             立即压缩上下文
+  /todo                查看待办
+  /export [文件.md]    导出会话为 Markdown（默认会话名.md）
+  /skills              列出可用技能
+  /new /switch /list /rename /help  会话管理
+`
+
 func chatCmd() {
+	for _, arg := range os.Args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Print(chatUsage)
+			return
+		}
+	}
+
 	wd, _ := os.Getwd()
 	cfg, err := repair.SafeLoad(wd)
 	if err != nil {
@@ -356,6 +392,17 @@ func remoteCmd() {
 	}
 	fmt.Println(output)
 }
+
+const rootUsage = `Bounty — 智能体 CLI
+
+用法:
+  bounty chat            终端 TUI 对话（bounty chat --help 查看按键与斜杠命令）
+  bounty run <prompt>    单次任务（--json --model provider/model --max-steps N）
+  bounty serve           多渠道网关（端口 8080）
+  bounty dashboard       网页版控制台（http://localhost:8090/dashboard）
+  bounty doctor          配置体检（--repair 从快照恢复）
+  bounty remote <host> <command>  通过 SSH 远程执行
+`
 
 // consoleSink prints events to the terminal.
 // broadcastSink fans out events to all connected SSE clients.

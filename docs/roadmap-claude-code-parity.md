@@ -198,6 +198,7 @@
 **P3-5 TUI 打磨 + Slash 命令（S12a）**
 - 目标：bubbletea 上做键盘导航（历史/滚动）、工具调用折叠面板、diff 彩色（edit 前后对照）、权限弹窗选择；slash 命令首批：`/model`、`/compact`、`/todo`、`/export`、`/skills`、`/status`。
 - 验收：录屏对比清单（导航/折叠/diff 三场景）逐项打勾。
+- 状态（2026-08-13）：✅ 已交付——①键盘导航：Alt+↑/↓ 输入历史、e 展开最近工具、E 全部展开/折叠、Esc 清输入（工具弹窗中=拒绝）、↑/↓/PgUp/PgDown/Home/End 滚动（保留滚轮）；②工具折叠面板：`tool_call` 单行摘要，展开显示 args/结果（≤8 行截断）/✓✗，`edit_file` 展开显示**彩色 diff**（绿+红-，`diffLines` 前后缀裁剪+2 行上下文）；③权限弹窗：`tuiAsker` 内联对话框（数字键选择方案、Esc 拒绝、ctx 超时清空），`RunTUI` 接入 Asker；④slash 命令：`/status /model [provider/model] /compact /todo /export [文件.md] /skills /help` + 既有 `/new /switch /list /rename`；⑤支撑方法：`agent.ForceCompact()`（compact.go 拆出 `compactNow`，ForceRatio 路径+双倍超时）、`control.ForceCompact()/Skills()`、`boot.SwitchModel`（provider/model 或裸名，走 secrets 池）。新文件：`internal/cli/tui.go`（大改）、`diff.go`、`export.go`、`asker.go`、`tui_test.go`。测试：cli 16 项 + agent compact 新增 2 项 + boot SwitchModel 3 项全绿；`go vet ./...`、`go test ./... -count=1 -timeout=600s` 全绿、selfcheck 40/40；TUI 二进制实测 `bounty chat --help` / `bounty --help` / `bounty chat --list` 正常。**收尾顺带修复三处真问题**：①`chat --help` 此前直接进 TUI 在无 TTY 管道下挂起——补 help 短路 + `chatUsage`/`rootUsage`；②sandbox `TestJobCloseReapsPingChild` 与 builtin 的 ping 超时测试在全量并行时 tasklist 误判（他人 ping.exe）——子进程改用唯一命名 ping 副本 + 轮询断言；③Windows `python3.exe` Store 存根 LookPath 可见但不可执行，DeVET 后端启动失败——launcher 改为 python/python3 实测 `--version` 探测。诚实边界：验收原为"录屏对比清单逐项打勾"，键盘/折叠/diff 已由 tui_test 覆盖模型逻辑，但本机未做真实 TTY 逐键录屏（部分验收）；`/model` 切换 qwen key 实测可用，未在 TUI 内手动逐键演示全部 slash。
 
 ### 阶段 4（第 7–8 周）：差异化与口碑
 

@@ -3,8 +3,10 @@
 package sandbox
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -36,26 +38,60 @@ func TestJobCloseKillsChildTree(t *testing.T) {
 }
 
 // TestJobCloseReapsPingChild checks via tasklist that the ping.exe child
-// spawned by cmd.exe is gone after the job handle closes.
+// spawned by cmd.exe is gone after the job handle closes. The child runs
+// from a uniquely named copy of ping.exe so that parallel test packages
+// (e.g. builtin's own ping-based timeout test) can never cause a false
+// positive.
 func TestJobCloseReapsPingChild(t *testing.T) {
-	cmd := exec.Command("cmd", "/c", "ping", "-n", "30", "127.0.0.1")
+	pingPath, err := exec.LookPath("ping")
+	if err != nil {
+		t.Skipf("ping not on PATH: %v", err)
+	}
+	data, err := os.ReadFile(pingPath)
+	if err != nil {
+		t.Fatalf("read ping.exe: %v", err)
+	}
+	unique := filepath.Join(os.TempDir(), fmt.Sprintf("bounty-ping-%d.exe", os.Getpid()))
+	if err := os.WriteFile(unique, data, 0o755); err != nil {
+		t.Fatalf("write unique ping copy: %v", err)
+	}
+	defer os.Remove(unique)
+	image := filepath.Base(unique)
+
+	cmd := exec.Command("cmd", "/c", unique, "-n", "30", "127.0.0.1")
 	cont, err := StartContained(cmd, JobOptions{Network: true})
 	if err != nil {
 		t.Fatalf("StartContained: %v", err)
 	}
-	time.Sleep(800 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
+	for !tasklistHasImage(t, image) {
+		if time.Now().After(deadline) {
+			cont.Close()
+			_ = cmd.Wait()
+			t.Fatalf("contained child %s never spawned", image)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err := cont.Close(); err != nil {
 		t.Fatalf("container close: %v", err)
 	}
 	_ = cmd.Wait()
-	time.Sleep(300 * time.Millisecond)
-	out, err := exec.Command("tasklist", "/FI", "IMAGENAME eq ping.exe", "/NH").CombinedOutput()
+	deadline = time.Now().Add(3 * time.Second)
+	for tasklistHasImage(t, image) {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s survived job close", image)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func tasklistHasImage(t *testing.T, image string) bool {
+	t.Helper()
+	out, err := exec.Command("tasklist", "/FI", "IMAGENAME eq "+image, "/NH").CombinedOutput()
 	if err != nil {
 		t.Fatalf("tasklist: %v", err)
 	}
-	if strings.Contains(strings.ToLower(string(out)), "ping.exe") {
-		t.Fatalf("ping.exe survived job close")
-	}
+	return strings.Contains(strings.ToLower(string(out)), strings.ToLower(image))
 }
 
 // TestJobStripsSecretsAndBlocksProxyWhenNetworkOff checks env handling.
