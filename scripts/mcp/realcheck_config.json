@@ -1,0 +1,27 @@
+{
+  "servers": [
+    {
+      "name": "filesystem",
+      "command": "node",
+      "args": [
+        "D:/智能体开发/全智赛AI+软件/Bounty1.0/scripts/mcp/npm/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
+        "C:/bounty-eval/work"
+      ],
+      "timeout": 60,
+      "read_only": true
+    },
+    {
+      "name": "memory",
+      "command": "node",
+      "args": [
+        "D:/智能体开发/全智赛AI+软件/Bounty1.0/scripts/mcp/npm/node_modules/@modelcontextprotocol/server-memory/dist/index.js"
+      ],
+      "timeout": 60
+    },
+    {
+      "name": "math-sse",
+      "url": "http://127.0.0.1:18080",
+      "timeout": 60
+    }
+  ]
+}

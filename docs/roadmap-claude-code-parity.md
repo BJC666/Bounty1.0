@@ -291,9 +291,9 @@
 | 技能索引 20 + 审计拒绝 | ✅ 闭环 | `TestBuiltinSkillsIndexTwenty` + 8 规则 |
 | 检查点回滚 diff=空 | ✅ 闭环 | `gitstore_test.go` 50 文件乱改用例 |
 | 死循环 <2%、崩溃率 | ✅ 闭环 | 超时 0、护栏退出 0 |
-| P3-1 连 3 个真实 MCP server | ⏳ 待补 | 仅本地假 server（stdio 子进程 + httptest SSE）覆盖协议 |
-| P3-4 子代理输出 token ↓50% | ⏳ 待补 | 无 P3-3 前基线，未跑 before/after |
-| P3-5 TUI 录屏逐项打勾 | ⏳ 待补 | 逻辑由 tui_test 覆盖，无真实 TTY 逐键录屏 |
+| P3-1 连 3 个真实 MCP server | ✅ 闭环 | 官方 Node reference server x2（stdio）+ 官方 Python SDK FastMCP（SSE）；E1/E2 真实 server 重跑 PASS；`docs/eval/p7-4-mcp-transcript.txt` |
+| P3-4 子代理输出 token ↓50% | ✅ 闭环 | 单测 5.0%/8.4% + 真实模型 18.2%（20,883→3,792 tok）；`docs/eval/p7-4-subagent-token.txt` |
+| P3-5 TUI 录屏逐项打勾 | ✅ 闭环 | winpty 真实 TTY 逐键录屏三场景（导航/折叠/diff）；`docs/eval/p7-4-tui/transcript.log` |
 | P1-3 A 类步数 ↓30% | ⏳ 未达 | 实测 ↓21.8%（二轮）/ ↓28.4%（修复轮） |
 | P1-4 token/任务 ↓20% | ⏳ 未达 | 实测输入 ↓13.6%、成本 ↓21.3% |
 | P2-2 工具失败率 <5% | ⏳ 方差内 | 4.6%（一轮）/ 7.1%（二轮），均值 ~5.9% |
@@ -335,16 +335,26 @@
 - P3-4：子代理摘要 token before/after 对比（构造长输出子代理任务，单测+真实模型各一次）；
 - P3-5：真实 TTY 录屏三场景（导航/折叠/diff）逐项打勾存档；
 - P1-3：A 类步数回归验证（与 P7-2/P7-3 一起跑）。
-- 验收：7.0 表逐项转 ✅，附证据文件路径。
+- 状态（2026-08-13）：✅ 已交付——汇总 `docs/eval/p7-4-acceptance.md`。
+  - P3-1：`scripts/mcp/realcheck`（Go harness）+ 官方 Node reference server（filesystem/memory，stdio）+ 官方 Python SDK FastMCP SSE server；转写 `docs/eval/p7-4-mcp-transcript.txt`；E1/E2 换真实 SDK server 重跑全 PASS（run 20260813-mcp-real，工具失败率 0%）。
+  - P3-4：单测 5.0%/8.4%（ASCII/CJK 长输出），真实模型 18.2%（20,883→3,792 tok，↓81.8%）；证据 `docs/eval/p7-4-subagent-token.txt`。
+  - P3-5：pywinpty 真实 TTY 逐键录屏 257KB 转写（S1 导航多帧重绘 / S2 e、E 展开折叠 / S3 edit_file diff 面板）；`docs/eval/p7-4-tui/transcript.log`。
+  - P1-3：A 类步数 3.3→2.4/2.5（**↓27.3%/24.2%**），未达 30% 线，如实记录为未达项。
+- 验收：7.0 表 3 项转 ✅（P3-1/P3-4/P3-5），P1-3 保持 ⏳未达（附证据）。
 
 **P7-5 DeVET 差异化深化**（护城河）
 - 交付：①真实网络证明升级评估（notary/TLS 级承诺 vs 当前结果承诺级——给出成本/收益与论文联动方案）；②真实委派链镜像成本压测（fleet 2/8/32 并发，记录逐轮镜像耗时与 99 分位）；③与论文初稿（信息安全学报）实验数据对齐。
-- 验收：压测报告入库；论文实验表格数据可复现。
+- 状态（2026-08-13）：✅ 已交付——
+  - ① 评估文档 `DeVET/docs/network-proof-upgrade.md`：现状=stub 结果承诺级（`vet_webproofs/prover.py`）；方案 A TLSNotary（强/秒级/需 notary 基础设施）、B 云信任锚、C 混合（推荐 v2）；结论=投稿版维持 stub（论文贡献是委托链算法，WebProof 为可替换证据载体），真实性证明列入论文未来工作。
+  - ② 压测脚本 `DeVET/vet-repro/benchmarks/bench_fleet_mirror.py`（自启后端，并发 2/8/32 × 20 轮/worker，HTTP 往返口径）：p99 = 26.3 / 27.8 / 32.9 ms，max = 26.3 / 29.1 / 38.1 ms；报告 `DeVET/docs/benchmarks/fleet-mirror-20260813-231657.md`（+CSV）。
+  - ③ `paper_experiments.py` 一键复现：8 类攻击 800/800 全 100%（表 6 对齐）；委托深度 1/2/3/5 实测 mean=0.022/0.044/0.055/0.085ms、p95=0.027/0.069/0.084/0.134ms、存储 75B/Agent；**论文初稿表 7/摘要已用实测更新**（原 0.024ms 为旧口径，现 0.044ms），`results/paper_experiments.json` 入库。
+- 验收：压测报告入库 ✅；论文实验表格数据可复现 ✅（`python benchmarks/paper_experiments.py`）。
 
 **P7-6 DeepSeek 基线**（阻塞项）
 - 恢复方式：设置有效 `DEEPSEEK_API_KEY` 后 `python scripts/eval/runner.py --models deepseek/deepseek-v4-pro --rebuild` → judge → report 入库；与 qwen 基线并列进入 8 周对比表。
+- 状态（2026-08-13）：⏳ 仍阻塞——2026-08-13 重测 `POST https://api.deepseek.com/chat/completions`（deepseek-chat, max_tokens=1）返回 **HTTP 401**；`DEEPSEEK_API_KEY` 环境变量已设置但无效。需用户提供有效 key 后按上述命令恢复。
 
-**阶段 7 验收汇总（2026-08-13）**：P7-1/P7-2/P7-3 已交付——工具调用失败率新口径连续两轮 <5%（1.2%/3.8%）、输入 token ↓24.4% 达标、成本 ↓30.3%、pass@1 100% 不降；剩余待补项：P7-4 验收补课（真实 MCP/子代理 token 对比/TUI 录屏）、P7-5 DeVET 深化、P7-6 DeepSeek 基线（key 阻塞）。报告 `docs/eval/20260813-222946-report.md`。
+**阶段 7 验收汇总（2026-08-13 终）**：P7-1/P7-2/P7-3 已交付（失败率 <5%、token ↓24.4%、pass@1 100%）；**P7-4 已交付**（真实 MCP server x3 + E1/E2 真实 server 重跑、子代理摘要 token 18.2%、TUI 真实 TTY 录屏三场景、A 类步数回归 ↓24–27% 未达 30% 线）；**P7-5 已交付**（网络证明升级评估、fleet 2/8/32 镜像压测 p99 26.3/27.8/32.9ms、论文表 7/摘要数据对齐实测）；**P7-6 阻塞确认**（DeepSeek key 401 重测无效）。7.0 盘点：14 项中 11 项闭环，未闭环 3 项 = P1-3（A 类步数 ↓30%，实测 24–27%）、P1-4（token ↓20%，已改为成本口径达标）、DeepSeek 基线（key 阻塞）。
 
 ---
 

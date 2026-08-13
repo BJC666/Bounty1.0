@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
-"""MCP stdio 服务器（官方 Python SDK FastMCP 实现）：math（add / calc_fib），供 Eval E 类任务使用。"""
+"""P7-4a 真实 MCP SSE server：官方 Python SDK（FastMCP）实现 math（add / calc_fib）。
+
+用法: python sse_math_server.py [port]   # 默认 18080，SSE 端点 http://127.0.0.1:<port>/sse
+"""
+import sys
+
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("math")
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 18080
+
+mcp = FastMCP("math-sse", host="127.0.0.1", port=PORT)
 
 
 @mcp.tool()
@@ -21,4 +28,4 @@ def calc_fib(n: int) -> int:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="sse")

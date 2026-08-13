@@ -1,0 +1,9 @@
+{
+  "name": "bounty-mcp-realcheck",
+  "private": true,
+  "description": "P7-4a real-MCP-server verification deps (official reference servers)",
+  "dependencies": {
+    "@modelcontextprotocol/server-filesystem": "^0.6.2",
+    "@modelcontextprotocol/server-memory": "^0.6.2"
+  }
+}

@@ -1,0 +1,28 @@
+== P7-4a realcheck 2026-08-13 22:53:24 ==
+OK  connect filesystem   kind=stdio took=118ms
+OK  connect memory       kind=stdio took=64ms
+OK  connect math-sse     kind=sse took=13ms
+-- tools(20): [mcp__filesystem__create_directory mcp__filesystem__get_file_info mcp__filesystem__list_allowed_directories mcp__filesystem__list_directory mcp__filesystem__move_file mcp__filesystem__read_file mcp__filesystem__read_multiple_files mcp__filesystem__search_files mcp__filesystem__write_file mcp__math-sse__add mcp__math-sse__calc_fib mcp__memory__add_observations mcp__memory__create_entities mcp__memory__create_relations mcp__memory__delete_entities mcp__memory__delete_observations mcp__memory__delete_relations mcp__memory__open_nodes mcp__memory__read_graph mcp__memory__search_nodes]
+-- calls on filesystem
+OK   mcp__filesystem__list_directory -> [DIR] 20260813-215848
+[DIR] 20260813-221656
+[DIR] 20260813-222946 // 官方 filesystem reference server
+-- calls on memory
+OK   mcp__memory__create_entities -> [] // 官方 memory reference server
+OK   mcp__memory__read_graph -> {
+  "entities": [
+    {
+      "type": "entity",
+      "name": "bounty",
+      "entityType": "agent",
+      "observations": [
+        "p7-4a real server check"
+      ]
+    }
+  ],
+  "relations": []
+}
+-- calls on math-sse
+OK   mcp__math-sse__add -> 42 // 官方 Python SDK FastMCP SSE server
+OK   mcp__math-sse__calc_fib -> 55
+== ALL PASS ==
