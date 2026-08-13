@@ -196,3 +196,18 @@
 - 后端链状态按 `tenant_id`（body/query，默认 default）分片；新增 `GET /api/tenants`（观测）与 `DELETE /api/tenants/{id}`（清理）；Bounty 侧默认以会话 id 作为 tenant，并发会话互不覆盖。
 - 安全属性：租户隔离是内存级命名空间（无跨租户读写路径）；DELETE 仅清指定租户；`/api/tenants` 只暴露租户 id/链大小/时间戳，不含证明细节。
 - 已知边界：内存态（重启丢全部租户）；无鉴权/限流（仍限 127.0.0.1 回环部署，生产多租户需加 API key + 每租户配额）；tenant_id 长度上限 128。
+
+# 2026-08-13 增补：P6 工具失败率修复 + 上下文裁剪（安全属性与边界）
+
+## 沙箱重定向白名单（nul）
+- `internal/sandbox/policy.go`：重定向目标经 `strings.Trim(target, "\"")` 后**精确**等于 `nul`/`NUL`（大小写不敏感）或 `\.\nul` 才放行——这是 Windows「丢弃输出」惯用法（`> nul`/`2> nul`/`>> NUL`），不是文件写入。
+- `nul.txt`/`nul.log`/`C:\Windows\nul.txt` 等真实路径**不匹配仍拦截**（有测试锁定：workspace 外 `nul.txt` 必须被拒）。
+- 已知边界：白名单仅作用于重定向目标解析，`nul` 作为普通命令参数（如 `type nul`）不走该分支，仍受原策略约束；若未来支持 Linux 沙箱，`/dev/null` 需单独同等处理（当前策略面向 Windows cmd，`nul` 为 Windows 设备名）。
+
+## grep 原生回退
+- rg 启动失败（PATH 中 rg.exe 不可执行，报 `Access is denied`）时回退 Go 原生 `grepFallback`，与 rg 路径共用同一执行前权限预检/沙箱包装，**不扩大权限面**；回退实现同样受匹配上限 300 条与截断提示约束（P1-4）。
+
+## read_file 路径提示
+- 文件不存在时，在**最近的上层现存目录**内 WalkDir 枚举同名候选（跳过 `.git/node_modules/__pycache__/.venv`，≤4000 文件，top 5），输出「疑似目标文件…可先 glob 确认后再读」。
+- 安全属性：纯只读操作，提示内容为候选路径名（不含文件内容）；跳过目录仅用于信噪比与性能，不构成访问控制（read_file 本就可读任意路径，访问面由既有权限门/沙箱决定）。
+- 已知边界：枚举上限 4000 文件/目录，超大目录下可能漏报候选（提示缺失时模型仍可 glob 自行定位）；候选命中文件名不含目录结构信息时可能误导，故文案要求「先 glob 确认再读」。

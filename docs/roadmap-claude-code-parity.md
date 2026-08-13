@@ -259,6 +259,25 @@
 
 **P5-6 全量 Eval 跑分（20260813-165619，49/49）**：pass@1 **96.7%→100%**（A/B/C/D/E/F/G 全过，D 记忆 3/3、E 生态 7/7、F DeVET 6/6、G 截图 3/3）；平均步数 5.6→4.1（↓27%）；token/任务 21,031→19,817（↓5.8%）；工具失败率 7.3%→12.4%（B/C 类编辑/写文件失败为主）。验收判定：P1-3 差 0.5pp 未达、P1-4 未达（B/C 上下文成本上升）、pass@1 达标；P2 系与上下文裁剪为下一轮杠杆。详细：`docs/eval/20260813-165619-report.md`、`docs/eval-baseline.md`。
 
+### 阶段 6（2026-08-13，可靠性回归批）：工具失败率 <5% + token/任务 ↓20%
+
+> P5 跑分（20260813-165619）暴露两条未达验收线（工具失败率 12.4%、token ↓5.8%）后的针对性回归批。失败归因（185 次工具调用）：bash 11（`nul` 误拦 1 + 路径/编码 6 + 文件不存在 2 + 权限 1）、read_file 7（全为路径猜测）、grep 5（rg 启动失败）。上下文裁剪针对 B/C 类 token 反升（↑17%/↑23%）的注入成本。
+
+**P6-1 上下文裁剪（S4/P1-3/P1-4 杠杆）**
+- 现状：Repo Map 10000 rune + 自动记忆 8 条 + 技能索引 4000 字符，每轮注入成本在 B/C 类多工具任务上放大。
+- 交付：`repomap.DefaultMaxRunes` 10000→7000（≈1750 token）；`autoMemoryInjectionLimit` 8→4 条，单条截断 400/200→240/120（保留最相关记忆）；`skill.maxIndexChars` 4000→2500（索引只列名+描述，命中才由 P5-1 注入正文）。
+- 测试：既有 repomap/boot/skill 测试全绿（上限断言随常量同步更新）。
+- 验收：Eval token/任务 ↓20% 且 pass@1 不降（P6-3 跑分验证）。
+
+**P6-2 工具失败率修复（P2 系回归）**
+- 交付：①`grep` 在 rg 启动失败（PATH 中 rg.exe 被沙箱拦截 `Access is denied`）时回退 Go 原生 `grepFallback`，不再裸报错（样本 5 次失败的真 bug）；②`read_file` 文件不存在时追加 pathHints——在最近现存目录内 WalkDir 找同名候选（跳过 `.git/node_modules/__pycache__/.venv`，≤4000 文件，top 5），输出「疑似目标文件…可先 glob 确认后再读」（针对 7 次猜错文件名失败）；③沙箱重定向目标 `nul`/`NUL`/`\\.\nul` 白名单放行（Windows 丢弃输出惯用法），`nul.txt` 等真实路径仍拦截（1 次误拦）。
+- 测试：`truncate_test.go` 新增 grep 回退用例（伪造 exit 2 的 rg.bat）、`read_file_hint_test.go` 2 用例（有提示/无提示）、`policy_test.go` nul 放行+真实文件拦截用例；`go build`+`go vet`+`go test ./...` 全绿。
+- 验收：Eval 工具失败率 <5%（P6-3 跑分验证）。
+
+**P6-3 全量 Eval 跑分**：跑分进行中（后台 runner，qwen/qwen3.8-max，49 题）——结果与判定回填本行。
+
+**阶段 6 验收汇总**：`go test ./...` 全绿、`go vet ./...` 全绿；提交 e585f2a。
+
 ---
 
 ## 5. 质量护栏（长期机制）
