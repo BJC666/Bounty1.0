@@ -172,3 +172,27 @@
 - 图片输入白名单：仅 png/jpeg/gif/webp 四种 mime（嗅探文件头 + 扩展名兜底），单图 ≤10MiB，超限/未知类型直接拒绝，防超大 payload 撑爆上下文或内存。
 - 图片以 base64 data URL 进入 provider 请求，密钥/图片均不落日志；与文本消息同走既有 SSRF/密钥剥离链路。
 - 已知边界：base64 放大 4/3 倍，10MiB 图片约占 13M 字符，超大上下文模型需自行留意 token 消耗（usage 按 API 返回计）；图片消息不写入 SQLite 会话存储（重启后丢失，属隐私友好而非缺陷）；模型对图片内容的理解不受 DeVET 验签约束（验签对象是工具/子代理结果承诺，不是视觉理解正确性）。
+
+
+# 2026-08-13 增补：P5 生态闭环（技能触发注入 / 插件市场 / Web 图片上传 / DeVET 多租户）
+
+## 技能触发注入
+- 触发词命中即注入技能正文（`Controller.Send/SendWithImages`），上限 2 条、按触发词在用户文本中的最早位置排序——技能从"索引可见"变为"请求即生效"。
+- 安全属性：注入的是仓库/用户技能库的静态正文，与系统提示同源同审计（P4-2 八规则在加载时已过滤危险技能）；注入位置在用户输入之前、plan/goal 层之后，模型可区分"系统技能规范"与"用户数据"。
+- 已知边界：审计仍是子串级；技能正文可信度=技能来源可信度，第三方技能市场引入后需升级审计为 AST/行为级（与 P4-2 边界一致）。
+
+## 插件市场（search/install/list）
+- 安装链路：registry JSON（sha256 钉定）→ 下载 zip → sha256 强校验（不匹配即拒装）→ 解压（zip-slip：绝对路径/`..` 逃逸一律拒绝，且逐文件校验目标仍在插件目录内）→ 覆盖旧版（先清后装）。
+- 默认 registry 指向仓库内 `marketplace/registry.json`（作者 BJC666 自有仓库），`BOUNTY_PLUGIN_REGISTRY`/`--registry` 可指向自建源；GitHub 直连失败自动回退受信镜像（gh-proxy.com / ghfast.top，仅 github 域名）。
+- 已安装插件仅贡献 commands/agents 定义（提示词/角色文件），**不执行任意代码**；manifest permissions 字段当前仅声明（不授权提权），插件无独立沙箱——与内置命令同一信任面。
+- 已知边界：registry 为 HTTPS 明文 JSON（非签名），防篡改依赖传输层 + 安装后 sha256 校验（注册表值本身可被中间人改写；自建源场景建议部署方自行加签）。下载 64MiB 上限。
+
+## Web 聊天图片上传
+- `/chat/api/upload`：≤4 张、单张 ≤10MiB、扩展名白名单 + `http.DetectContentType` 内容嗅探（伪装 .exe 传 png 内容会因扩展名被拒；伪装 .png 传 exe 内容会因嗅探非 image 被拒）。
+- 图片存 `~/bounty-data/uploads/`（服务端本地），仅通过 `/chat/api/send` 的 images 字段回读，`LoadImageFile` 同源白名单二次校验；上传端点与聊天端点同走 token 鉴权中间件。
+- 已知边界：上传文件按时间戳命名、无过期清理（长期会话会累积）；图片落盘明文（本地单用户部署可接受，多用户场景需加租户目录隔离）。
+
+## DeVET 多租户分片
+- 后端链状态按 `tenant_id`（body/query，默认 default）分片；新增 `GET /api/tenants`（观测）与 `DELETE /api/tenants/{id}`（清理）；Bounty 侧默认以会话 id 作为 tenant，并发会话互不覆盖。
+- 安全属性：租户隔离是内存级命名空间（无跨租户读写路径）；DELETE 仅清指定租户；`/api/tenants` 只暴露租户 id/链大小/时间戳，不含证明细节。
+- 已知边界：内存态（重启丢全部租户）；无鉴权/限流（仍限 127.0.0.1 回环部署，生产多租户需加 API key + 每租户配额）；tenant_id 长度上限 128。

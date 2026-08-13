@@ -136,13 +136,13 @@
 **P1-3 Repo Map（S4）**
 - 目标：启动+文件变更时增量索引（复用 `code_index.go` 正则，加文件树与依赖边），每轮在系统提示后注入 ≤3000 token 的仓库概览；变更即失效重建。
 - 验收：Eval A 类（仓库理解）步数下降 ≥30%（对照阶段 0 基线）。
-- 状态（2026-08-13）：✅ 代码侧已交付——新增 `internal/repomap`（文件树+符号索引+内部依赖边，go.mod 模块路径/相对导入/顶层目录分类；指纹=路径|大小|mtime 变更即重建）；`repo_map` 只读工具强制刷新；启动注入 + 每用户轮刷新（`Options.RepoMap` 接口，`stripRepoMap` 替换而非追加，上限 10000 rune≈2500 token）；`code_index` 改为复用 repomap 单一正则源。测试全绿：`map_test.go`（7 项）、`repo_map_test.go`（4 项）、`repomap_test.go`（2 项）。验收指标（A 类步数 ↓30%）待真实模型跑分，需 QWEN token，另行执行。
+- 状态（2026-08-13）：✅ 代码侧已交付——新增 `internal/repomap`（文件树+符号索引+内部依赖边，go.mod 模块路径/相对导入/顶层目录分类；指纹=路径|大小|mtime 变更即重建）；`repo_map` 只读工具强制刷新；启动注入 + 每用户轮刷新（`Options.RepoMap` 接口，`stripRepoMap` 替换而非追加，上限 10000 rune≈2500 token）；`code_index` 改为复用 repomap 单一正则源。测试全绿：`map_test.go`（7 项）、`repo_map_test.go`（4 项）、`repomap_test.go`（2 项）。验收跑分（2026-08-13 P5 全量 49 题）：A 类步数 4.4→3.1（**↓29.5%**，验收线 ↓30% 差 0.5pp 未达，接近达标）。
 
 **P1-4 工具结果预算（配合 S1）**
 - 现状：`maxToolOut` 32KB 固定截断，无定位提示。
 - 目标：分工具预算——read_file 默认 2000 行上限+offset/limit 行号提示；grep 匹配上限 300 条并提示收窄；bash 输出保留头尾各 15KB；截断信息写清"共多少、如何继续读"。
 - 验收：Eval 平均 token/任务下降 ≥20%，且 pass@1 不降。
-- 状态（2026-08-13）：✅ 已交付——read_file 默认 2000 行上限，截断提示含总行数/显示区间/续读 offset；grep（rg 与原生 fallback）匹配上限 300 条，提示收窄 pattern/glob/path；bash 输出保留头尾各 15000 字符，中段提示重定向续读；agent 通用 32KB 兜底截断附原始字节数。测试全绿：`truncate_test.go`（10 项）。验收指标（token/任务 ↓20%）待真实模型跑分。
+- 状态（2026-08-13）：✅ 已交付——read_file 默认 2000 行上限，截断提示含总行数/显示区间/续读 offset；grep（rg 与原生 fallback）匹配上限 300 条，提示收窄 pattern/glob/path；bash 输出保留头尾各 15000 字符，中段提示重定向续读；agent 通用 32KB 兜底截断附原始字节数。测试全绿：`truncate_test.go`（10 项）。验收跑分（2026-08-13 P5 全量 49 题）：token/任务 21,031→19,817（**↓5.8%**，验收线 ↓20% 未达；A 类 ↓4.8%，B/C 类因 Repo Map/技能索引/自动记忆每轮注入成本反升 ↑17%/↑23%）——需上下文裁剪进一步压缩。
 
 **P1-5 Todo 宿主状态与计划契约（S9）**
 - 目标：`todo_write` 落 SQLite；plan 姿态下系统提示强制"先输出结构化计划+todo，再动手"；每轮把当前 todo 摘要（≤10 行）注入 system 尾部；完成态变化通知 UI。
@@ -221,6 +221,43 @@
 - 目标：`provider.Message` 升级 content blocks（text+image base64），三 provider 各自映射；TUI 支持粘贴图片路径。
 - 验收：截图报错 Eval 3 题通过。
 - 状态（2026-08-13）：✅ 已交付——①`provider.Message` 增加 `Parts []ContentPart`（text/image），`NewUserMessage` 与 `LoadImageFile`（mime 白名单 png/jpeg/gif/webp、单图≤10MiB、base64）；文本消息保持原字符串形态（零破坏）。②四 provider 全部映射：OpenAI 兼容/native（text + image_url data URL）、Anthropic（text + image/source.base64）、Ollama（经 OpenAI 兼容客户端继承）；unit 测试锁定两端线上格式。③TUI 粘贴图片路径：输入里存在的图片文件路径（≤4 张，含带空格引号路径）自动识别并转为多模态消息，UI 回显 🖼 行；`bounty run` 支持 `--image` 重复参数。④Eval 新增 G 类 3 题（截图报错：Go 编译错误/测试失败/Python 异常栈，PIL 生成 fixture），runner 传 --image、judge 按关键点、selfcheck 49/49；qwen/qwen3.8-max 实测 3/3 通过（模型逐字读出报错并给出文件:行号）。诚实边界：G 类需多模态模型（DeepSeek 无视觉，跑 G 会失败属预期）；图片不进 SQLite 会话持久化与压缩摘要（重新加载会话后图片消息丢失，TUI 回显仍保留）；token 统计不含图片字节（按 API 返回 usage 计）。
+
+---
+
+### 阶段 5（2026-08-13，后续增强批）：生态闭环 —— 触发注入 / 插件市场 / Web 多模态 / DeVET 多租户
+
+> 阶段 0–4 全部交付后的增强批：把「技能/插件/多模态/DeVET」从「有」补成「闭环可用」。
+
+**P5-1 技能触发即注入**
+- 现状：技能只进系统提示索引，模型需自行想起加载。
+- 交付：`skill.Store.Match(text)` 按触发词在用户文本中的**最早出现位置排序**（最相关技能优先），上限 2 条防上下文淹没；`Controller.Send/SendWithImages` 命中即在输入前注入 `## Activated Skills` + 技能正文。
+- 测试：`internal/skill/match_test.go`（命中/大小写/排序截断/禁用过滤/空文本，5 用例）+ `internal/control/controller_test.go`（注入/不注入/带图仍注入，3 用例）全绿。
+- 验收：`go test ./internal/skill/ ./internal/control/` 全绿；`bounty chat` 输入含触发词（如"git 提交"）时模型上下文含技能规范。
+
+**P5-2 插件市场**
+- 交付：`internal/plugin/marketplace.go` —— `FetchIndex`（JSON registry）、`Search`（名称/描述/作者）、`Install`（下载 zip → sha256 强校验 → 解压，**zip-slip 拒绝**、清旧装）、`Installed`；`bounty plugin search|install|list` 子命令；默认 registry 指向仓库 `marketplace/registry.json`，`BOUNTY_PLUGIN_REGISTRY`/`--registry` 可覆盖；**GitHub 直连失败自动走受信镜像（gh-proxy.com / ghfast.top）**；boot 自动发现 `~/bounty-data/plugins/*/commands|agents`。
+- 内容：`marketplace/` 内置 security-review（/review 安全评审命令）与 docs-zh（中文文档子代理）两插件 + `build.py`（确定性 zip + 注册表 sha256 生成）。
+- 测试：`internal/plugin/marketplace_test.go`（拉取/搜索/安装校验/坏哈希拒绝/zip-slip 拒绝，5 用例）+ 本地 HTTP 端到端冒烟（search→install→list→目录结构）通过。
+- 验收：`bounty plugin search 安全` 出结果；`bounty plugin install security-review` 校验 sha256 后落地；重启会话后 `/review` 命令可用。
+
+**P5-3 Web 聊天图片上传**
+- 交付：`POST /chat/api/upload`（multipart，≤4 张、单张 ≤10MiB、png/jpeg/gif/webp 白名单 + `http.DetectContentType` 内容嗅探）→ 存 `~/bounty-data/uploads/` 返回路径；`POST /chat/api/send` 支持 `images:[路径]` → `provider.LoadImageFile` → `SendWithImages`（未接线返回 501）；Web 控制台新增 🖼 按钮、预览/删除、上传后发送、用户消息 🖼×N 回显。
+- 测试：`internal/serve/chat_test.go`（上传成功/非法扩展名/带图发送/未接线 501，4 用例）全绿。
+- 验收：Web 控制台粘贴截图 → 发送 → qwen3.8-max 能读到图（G 类 Eval 同链路已验证 3/3）。
+
+**P5-4 DeVET 多租户分片**
+- 现状：后端单例内存态，多会话并发会覆盖链（此前诚实边界）。
+- 交付：后端 `_TENANTS` dict 按 `tenant_id`（body/query，默认 default）分片，build/verify/mirror/tamper 全部租户级读写；新增 `GET /api/tenants`（观测）与 `DELETE /api/tenants/{id}`（清理）；Bounty `MirrorClient` 增加 tenant（默认 = 会话 id），`MirrorAndVerify/Verify/Tamper` 全链路携带。
+- 测试：`DeVET/backend/test_api_routes.py` 4 用例（隔离/篡改作用域/默认租户兼容/清理）+ `internal/devet/mirror_test.go` TestTenantPropagation；third_party 副本同步，CI 新增 backend pytest 步骤。
+- 验收：两个 Bounty 会话并行 mirror/verify 互不覆盖；`curl /api/tenants` 可见各自链。
+
+**P5-5 DeepSeek 基线**（阻塞项）
+- 现状：`DEEPSEEK_API_KEY` 本地校验 401 无效，基线跑分待有效 key。
+- 恢复方式：设置有效 key 后 `python scripts/eval/runner.py --models deepseek/deepseek-v4-pro --rebuild` → judge → report 入库。
+
+**阶段 5 验收汇总**：`go test ./...` 全绿、`go vet ./...` 全绿、DeVET pytest 4/4（租户）+ 30/30（vet-repro）；功能端到端冒烟通过；提交 c3b6de1（Bounty）+ ad284d9（DeVET）。
+
+**P5-6 全量 Eval 跑分（20260813-165619，49/49）**：pass@1 **96.7%→100%**（A/B/C/D/E/F/G 全过，D 记忆 3/3、E 生态 7/7、F DeVET 6/6、G 截图 3/3）；平均步数 5.6→4.1（↓27%）；token/任务 21,031→19,817（↓5.8%）；工具失败率 7.3%→12.4%（B/C 类编辑/写文件失败为主）。验收判定：P1-3 差 0.5pp 未达、P1-4 未达（B/C 上下文成本上升）、pass@1 达标；P2 系与上下文裁剪为下一轮杠杆。详细：`docs/eval/20260813-165619-report.md`、`docs/eval-baseline.md`。
 
 ---
 
