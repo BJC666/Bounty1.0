@@ -47,10 +47,10 @@ func New() *Store { return &Store{} }
 	if !strings.Contains(block, "## Repo Map") {
 		t.Error("missing header")
 	}
-	if !strings.Contains(block, "[type] Store") {
+	if !strings.Contains(block, "[type]Store") {
 		t.Errorf("missing Go type symbol:\n%s", block)
 	}
-	if !strings.Contains(block, "[function] median") {
+	if !strings.Contains(block, "[function]median") {
 		t.Errorf("missing Python symbol:\n%s", block)
 	}
 	if !strings.Contains(block, "internal/store") {

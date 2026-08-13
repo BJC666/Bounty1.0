@@ -275,21 +275,21 @@ func renderBlock(nodes []FileNode, totalSymbols, maxRunes int) string {
 	}
 	var sb strings.Builder
 	sb.WriteString("\n## Repo Map\n")
-	sb.WriteString(fmt.Sprintf("<!-- files=%d symbols=%d -->\n", len(nodes), totalSymbols))
+	sb.WriteString(fmt.Sprintf("<!-- f=%d s=%d -->\n", len(nodes), totalSymbols))
 	prevDir := ""
 	for _, n := range nodes {
 		dir := pathDir(n.Path)
 		if dir != prevDir {
 			prevDir = dir
-			sb.WriteString(fmt.Sprintf("\n### %s/\n", dir))
+			sb.WriteString(fmt.Sprintf("\n## %s/\n", dir))
 		}
 		base := filepath.Base(n.Path)
-		sb.WriteString(fmt.Sprintf("- %s (%d symbols)\n", base, len(n.Symbols)))
+		sb.WriteString(fmt.Sprintf("- %s(%d)\n", base, len(n.Symbols)))
 		for _, s := range n.Symbols {
-			sb.WriteString(fmt.Sprintf("    [%s] %s (L%d)\n", s.Kind, s.Name, s.Line))
+			sb.WriteString(fmt.Sprintf("  [%s]%s L%d\n", s.Kind, s.Name, s.Line))
 		}
 		if len(n.Deps) > 0 {
-			sb.WriteString("    ↳ deps: " + strings.Join(n.Deps, ", ") + "\n")
+			sb.WriteString("  deps: " + strings.Join(n.Deps, ",") + "\n")
 		}
 	}
 	out := sb.String()
