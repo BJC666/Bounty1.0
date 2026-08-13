@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"bounty/internal/sandbox"
 	"context"
 	"os/exec"
 	"time"
@@ -14,6 +15,8 @@ type ToolOptions struct {
 	ProjectRoot      string
 	DockerBashRunner func(ctx context.Context, command string) (string, error)
 	SandboxFunc      func(*exec.Cmd) *exec.Cmd
+	BashPolicy       func(command string) error
+	BashSandboxStart func(cmd *exec.Cmd) (*sandbox.Container, error)
 }
 
 func RegisterAll(reg *tool.Registry, opts ToolOptions) {
@@ -21,6 +24,8 @@ func RegisterAll(reg *tool.Registry, opts ToolOptions) {
 		Timeout:      opts.BashTimeout,
 		DockerRunner: opts.DockerBashRunner,
 		Sandbox:      opts.SandboxFunc,
+		PolicyCheck:  opts.BashPolicy,
+		SandboxStart: opts.BashSandboxStart,
 	})
 	reg.Add(&ReadFileTool{})
 	reg.Add(&WriteFileTool{})

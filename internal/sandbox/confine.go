@@ -12,8 +12,16 @@ func Wrap(cmd *exec.Cmd, workspaceRoot string) *exec.Cmd {
 	if workspaceRoot != "" {
 		cmd.Dir = workspaceRoot
 	}
-	// Start by inheriting parent environment
-	env := os.Environ()
+	base := cmd.Env
+	if base == nil {
+		base = os.Environ()
+	}
+	cmd.Env = stripSecrets(base)
+	return cmd
+}
+
+// stripSecrets removes model-provider credentials from an env slice.
+func stripSecrets(env []string) []string {
 	filtered := make([]string, 0, len(env))
 	for _, e := range env {
 		if !strings.HasPrefix(e, "ANTHROPIC_API_KEY=") &&
@@ -23,6 +31,5 @@ func Wrap(cmd *exec.Cmd, workspaceRoot string) *exec.Cmd {
 			filtered = append(filtered, e)
 		}
 	}
-	cmd.Env = filtered
-	return cmd
+	return filtered
 }

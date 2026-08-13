@@ -94,3 +94,9 @@
 5. **M3/M4/L1**：认证比较、白名单名称、bash 超时钳制。
 
 > 说明：TLS 未列为问题——本项目为本地/局域网开发工具，未配置 TLS 属于部署场景，可按需通过反代提供。
+
+## 2026-08-13 增补：P3-2 Windows Job Object 沙箱
+- 新增：bash 子进程挂 Job Object（KILL_ON_JOB_CLOSE、禁 breakaway），容器关闭连坐击杀整棵进程树；实测孤儿 ping.exe 被回收。
+- 新增：Network=false 时出站预检（curl/pip/npm/git clone/Invoke-WebRequest/WebClient 等 19 类）+ 代理环境毒化；注意这是环境级阻断，非内核 WFP，绕过需直接 TCP 编程——文档已声明，可作后续增强。
+- 新增：bash 命令路径预检——引号感知重定向解析，workspace+allow_write 之外写入、forbid_read/forbid_write 命中即拦截（与权限门策略同语义）。
+- 已知边界：管道/命令代换中间接路径（`echo x > $(calc)` 类）无法静态覆盖；深子进程系统调用级 FS 限制未做（需要 ACL/AppContainer）。风险等级：中低。

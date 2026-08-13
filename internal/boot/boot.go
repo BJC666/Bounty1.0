@@ -107,11 +107,27 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 
 	repoMapMgr := repomap.NewManager(workspaceRootFor(cfg))
 
+	sandboxPolicy := sandbox.NewPolicy(
+		cfg.Sandbox.WorkspaceRoot,
+		cfg.Sandbox.AllowWrite,
+		cfg.Sandbox.ForbidRead,
+		cfg.Sandbox.ForbidWrite,
+		cfg.Sandbox.Network,
+	)
+	jobOpts := sandbox.JobOptions{
+		WorkspaceRoot: cfg.Sandbox.WorkspaceRoot,
+		AllowWrite:    cfg.Sandbox.AllowWrite,
+		ForbidRead:    cfg.Sandbox.ForbidRead,
+		ForbidWrite:   cfg.Sandbox.ForbidWrite,
+		Network:       cfg.Sandbox.Network,
+	}
 	builtin.RegisterAll(reg, builtin.ToolOptions{
 		BashTimeout:      120e9,
 		ProjectRoot:      cfg.Sandbox.WorkspaceRoot,
 		DockerBashRunner: dockerRunner,
 		SandboxFunc:      func(cmd *exec.Cmd) *exec.Cmd { return sandbox.Wrap(cmd, cfg.Sandbox.WorkspaceRoot) },
+		BashPolicy:       sandboxPolicy.Check,
+		BashSandboxStart: func(cmd *exec.Cmd) (*sandbox.Container, error) { return sandbox.StartContained(cmd, jobOpts) },
 	})
 
 	// 5a2. Start or connect to DeVET backend (optional — tools unavailable if not found)

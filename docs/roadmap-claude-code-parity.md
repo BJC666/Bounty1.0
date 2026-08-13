@@ -182,6 +182,7 @@
 **P3-2 Windows Job Object 沙箱（S8）**
 - 目标：bash 子进程挂 Job Object——限定可写目录（workspace + 白名单）、禁出站网络（可选开关）、子进程不可逃逸；Docker 可用时仍走容器。与 guardian 联动：危险命令在沙箱内也拦截。
 - 验收：三类攻击用例（写越界路径/读敏感文件/外联）全部被隔离，`sandbox_test.go` 全绿；安全报告更新。
+- 状态（2026-08-13）：✅ 已交付——①Job Object 容器（`internal/sandbox/job_windows.go`）：CREATE_SUSPENDED 启动 → 挂 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`（无 breakaway）→ 枚举线程恢复，子进程不可逃逸，容器句柄关闭即杀全家（实测 cmd 下的 ping.exe 子进程被连坐回收）；②网络开关：`Network=false` 时外联工具预检拦截（curl/pip/npm/git clone/WebClient 等 19 类模式）+ 代理环境变量毒化（HTTP(S)_PROXY→127.0.0.1:9），环境级出站阻断，kernel 级 WFP 记为后续工作；③路径策略（`policy.go`）：引号感知的重定向目标提取，写越界（workspace+allow_write 之外）与 forbid_read/forbid_write 命中的路径一律预检拦截；④guardian 联动：危险命令仍在 gate 层拦截，沙箱策略为第二道。测试：`policy_test.go` 7 项（三类攻击用例全隔离 + 无假阳性）、`job_windows_test.go` 4 项（树击杀/任务表验证/密钥剥离/代理毒化）、既有 `sandbox_test.go` 全绿。诚实边界：子进程内深路径（管道间接引用）与内核级网络阻断不在本轮范围，已在安全报告中标注。
 
 **P3-3 检查点升级为 git 影子仓库**
 - 现状：`internal/checkpoint` 文件快照，只覆盖声明了写路径的工具。

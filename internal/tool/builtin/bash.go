@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"bounty/internal/sandbox"
 	"bounty/internal/tool"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -23,6 +24,11 @@ type BashTool struct {
 	Timeout      time.Duration
 	Sandbox      func(*exec.Cmd) *exec.Cmd
 	DockerRunner func(ctx context.Context, command string) (string, error)
+	// PolicyCheck pre-validates the command (path policy / network policy).
+	PolicyCheck func(command string) error
+	// SandboxStart starts the command inside a Job Object container when
+	// configured; nil falls back to a plain start.
+	SandboxStart func(cmd *exec.Cmd) (*sandbox.Container, error)
 }
 
 func (b *BashTool) Name() string      { return "bash" }
@@ -59,6 +65,13 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 	}
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	// P3-2: sandbox policy pre-check (network/path) before anything runs.
+	if b.PolicyCheck != nil {
+		if err := b.PolicyCheck(params.Command); err != nil {
+			return "", err
+		}
+	}
 
 	// If Docker runner is configured, use it for isolated execution.
 	if b.DockerRunner != nil {
@@ -97,7 +110,7 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 	if b.Sandbox != nil {
 		cmd = b.Sandbox(cmd)
 	}
-	output, err := runWithTreeKill(cmd, execCtx)
+	output, err := runWithTreeKill(cmd, execCtx, b.SandboxStart)
 	if execCtx.Err() == context.DeadlineExceeded {
 		return "", &TimeoutError{Command: params.Command, Timeout: timeout}
 	}
@@ -336,12 +349,22 @@ func maybeAppendWindowsHint(shell, command, output string) string {
 // and on deadline kills the whole process tree on Windows (cmd.exe spawns
 // children such as ping that outlive the root process and keep output pipes
 // open; taskkill /T /F reaps them so the call returns promptly).
-func runWithTreeKill(cmd *exec.Cmd, ctx context.Context) ([]byte, error) {
+func runWithTreeKill(cmd *exec.Cmd, ctx context.Context, start func(*exec.Cmd) (*sandbox.Container, error)) ([]byte, error) {
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
-	if err := cmd.Start(); err != nil {
+	var container *sandbox.Container
+	var err error
+	if start != nil {
+		container, err = start(cmd)
+	} else {
+		err = cmd.Start()
+	}
+	if err != nil {
 		return nil, err
+	}
+	if container != nil {
+		defer container.Close()
 	}
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- cmd.Wait() }()
@@ -351,6 +374,9 @@ func runWithTreeKill(cmd *exec.Cmd, ctx context.Context) ([]byte, error) {
 	case <-ctx.Done():
 		if cmd.Process != nil {
 			killProcessTree(cmd.Process.Pid)
+			if container != nil {
+				container.Kill()
+			}
 		}
 		err := <-waitCh
 		return buf.Bytes(), err
