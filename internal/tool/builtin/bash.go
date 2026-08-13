@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -29,22 +28,26 @@ type BashTool struct {
 	// SandboxStart starts the command inside a Job Object container when
 	// configured; nil falls back to a plain start.
 	SandboxStart func(cmd *exec.Cmd) (*sandbox.Container, error)
+	// Background enables background jobs (run_in_background or requested
+	// timeout > 60s); nil falls back to synchronous execution.
+	Background *BackgroundStore
 }
 
 func (b *BashTool) Name() string      { return "bash" }
 func (b *BashTool) ReadOnly() bool    { return false }
 func (b *BashTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (b *BashTool) Description() string {
-	return "Execute a shell command. Use for running tests, building, file operations, git commands, and other terminal tasks."
+	return "Execute a shell command. Use for running tests, building, file operations, git commands, and other terminal tasks. Commands requesting timeout>60000ms or run_in_background=true start detached and return a job id; poll with bash_output and stop with bash_kill."
 }
 func (b *BashTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"command":{"type":"string","maxLength":4000,"description":"The shell command to execute"},"description":{"type":"string","maxLength":200,"description":"Clear, concise description of what this command does"},"timeout":{"type":"number","minimum":1,"maximum":600000,"description":"Optional timeout in milliseconds (max 600000)"}},"required":["command","description"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"command":{"type":"string","maxLength":4000,"description":"The shell command to execute"},"description":{"type":"string","maxLength":200,"description":"Clear, concise description of what this command does"},"timeout":{"type":"number","minimum":1,"maximum":600000,"description":"Optional timeout in milliseconds (max 600000; >60000 runs in background)"},"run_in_background":{"type":"boolean","description":"Run detached and return a job id immediately; poll with bash_output"}},"required":["command","description"],"additionalProperties":false}`)
 }
 func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {
-		Command     string  `json:"command"`
-		Description string  `json:"description"`
-		Timeout     float64 `json:"timeout"`
+		Command         string  `json:"command"`
+		Description     string  `json:"description"`
+		Timeout         float64 `json:"timeout"`
+		RunInBackground bool    `json:"run_in_background"`
 	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return "", err
@@ -101,14 +104,30 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 	if runtime.GOOS == "windows" && shell == "cmd" {
 		// Windows 上 os/exec 会把含引号的参数转义成 \" 形式，而 cmd.exe
 		// 不识别 \" 转义，导致带引号命令（如 python -c "..."）被截断。
-		// 用 SysProcAttr.CmdLine 原样传递命令行，绕过 os/exec 的转义。
+		// 用 SysProcAttr.CmdLine 原样传递命令行，绕过 os/exec 的转义
+		// （平台差异封装在 sysproc_windows.go / sysproc_other.go）。
 		cmd = exec.Command(shell)
-		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: shell + " " + shellFlag + " " + command}
+		applyWindowsCmdLine(cmd, shell, shellFlag, command)
 	} else {
 		cmd = exec.Command(shell, shellFlag, command)
 	}
 	if b.Sandbox != nil {
 		cmd = b.Sandbox(cmd)
+	}
+	// P4-3: explicitly requested long commands run detached and are polled
+	// via bash_output. Default timeouts stay synchronous for compatibility.
+	if (params.Timeout > 60000 || params.RunInBackground) && b.Background != nil {
+		var container *sandbox.Container
+		var startErr error
+		if b.SandboxStart != nil {
+			container, startErr = b.SandboxStart(cmd)
+		}
+		id, err := b.Background.Start(cmd, container, startErr, params.Command)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("已启动后台任务 %s，命令：%s\n轮询：bash_output {\"job_id\":\"%s\"}；终止：bash_kill {\"job_id\":\"%s\"}（任务随 bounty 进程退出而结束）",
+			id, params.Command, id, id), nil
 	}
 	output, err := runWithTreeKill(cmd, execCtx, b.SandboxStart)
 	if execCtx.Err() == context.DeadlineExceeded {

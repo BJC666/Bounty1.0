@@ -1,0 +1,56 @@
+name: PR Review Example (Bounty)
+
+# P4-3 示例：PR 自动 code review + 跑测试。
+# 使用说明：
+#   1. 在仓库 Settings → Secrets and variables → Actions 添加
+#      secrets.BOUNTY_API_KEY（模型 API Key，同一 key 会注入
+#      QWEN_TOKENPLAN_API_KEY 与 DEEPSEEK_API_KEY 两个环境变量）；
+#   2. 可选 vars.BOUNTY_MODEL（默认 qwen/qwen3.8-max）、
+#      vars.BOUNTY_BASE_URL（默认仓库 bounty.toml 配置的 base_url）。
+# 未配置 secret 时本 job 优雅跳过模型审查，仅跑测试。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: 测试 + Bounty 代码审查
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      - name: Run tests
+        run: go test ./... -count=1 -timeout=600s
+      - name: Build bounty
+        run: go build -o /tmp/bounty ./cmd/bounty
+      - name: Bounty code review
+        if: ${{ secrets.BOUNTY_API_KEY != '' }}
+        env:
+          QWEN_TOKENPLAN_API_KEY: ${{ secrets.BOUNTY_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.BOUNTY_API_KEY }}
+        run: |
+          git fetch origin "${{ github.event.pull_request.base.ref }}" --depth=1 || true
+          git diff "origin/${{ github.event.pull_request.base.ref }}...HEAD" > /tmp/pr.diff || true
+          echo "PR diff 行数: $(wc -l < /tmp/pr.diff)"
+          /tmp/bounty run "你是资深 Go 代码审查员。请审查 /tmp/pr.diff 中本次 PR 的全部改动，输出中文 review：按【严重】【一般】【建议】三级列出问题并标注 文件:行号，最后给出是否可合并的结论。若无问题请明确说明。" --json --model ${{ vars.BOUNTY_MODEL || 'qwen/qwen3.8-max' }} > /tmp/review.jsonl
+      - name: Upload review artifact
+        if: ${{ secrets.BOUNTY_API_KEY != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-review
+          path: /tmp/review.jsonl
+      - name: Skip review (no API key configured)
+        if: ${{ secrets.BOUNTY_API_KEY == '' }}
+        run: |
+          echo "未配置 secrets.BOUNTY_API_KEY，本次跳过模型审查（测试已跑）。"
+          echo "配置方法见本 workflow 文件头部注释。"

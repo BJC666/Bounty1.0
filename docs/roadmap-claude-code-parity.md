@@ -215,10 +215,12 @@
 **P4-3 无头与 CI 形态**
 - 目标：`run --json` 输出规范化事件流（已有 event 包）；一个 GitHub Action 示例（PR 自动 code review + 跑测试）；后台长命令（bash 超 60s 自动转后台，`bash_output` 轮询）。
 - 验收：示例 Action 在仓库 PR 上真实跑通一次。
+- 状态（2026-08-13）：✅ 已交付——①后台长命令：bash 请求 timeout>60000ms 或 run_in_background=true 时后台化（默认 120s 保持同步不破坏既有行为），新增 `bash_output` 轮询（status/exit_code/最新输出尾部，GBK 解码）与 `bash_kill` 终止（Job Object/进程树全杀），进程内任务上限 16 防 fork 失控，后台命令同样过权限预检+沙箱；5 项测试覆盖（轮询到 done、超 60s 自动转后台即时返回、未知 job 报错、kill 生效、无 store 时同步回退）。②CI：`.github/workflows/ci.yml`（push+\u0026PR：go build/vet/gofmt/test+coverage、Eval selfcheck 离线 30 题、DeVET pytest）+ `pr-review.yml`（PR 自动审查示例：跑测试→构建 bounty→`bounty run` 用模型审查 PR diff 并上传 artifact；未配置 secrets.BOUNTY_API_KEY 时优雅跳过）。③已在仓库 PR #1 上真实跑通（go 全绿 + selfcheck 30/30 + devet pytest 30/30）。诚实边界：PR 模型审查需要配置 secrets.BOUNTY_API_KEY（本次验证为跳过路径，测试部分真实跑通）；后台任务仅进程内生命周期，bounty 退出即结束。
 
 **P4-4 多模态输入（S10）**
 - 目标：`provider.Message` 升级 content blocks（text+image base64），三 provider 各自映射；TUI 支持粘贴图片路径。
 - 验收：截图报错 Eval 3 题通过。
+- 状态（2026-08-13）：✅ 已交付——①`provider.Message` 增加 `Parts []ContentPart`（text/image），`NewUserMessage` 与 `LoadImageFile`（mime 白名单 png/jpeg/gif/webp、单图≤10MiB、base64）；文本消息保持原字符串形态（零破坏）。②四 provider 全部映射：OpenAI 兼容/native（text + image_url data URL）、Anthropic（text + image/source.base64）、Ollama（经 OpenAI 兼容客户端继承）；unit 测试锁定两端线上格式。③TUI 粘贴图片路径：输入里存在的图片文件路径（≤4 张，含带空格引号路径）自动识别并转为多模态消息，UI 回显 🖼 行；`bounty run` 支持 `--image` 重复参数。④Eval 新增 G 类 3 题（截图报错：Go 编译错误/测试失败/Python 异常栈，PIL 生成 fixture），runner 传 --image、judge 按关键点、selfcheck 49/49；qwen/qwen3.8-max 实测 3/3 通过（模型逐字读出报错并给出文件:行号）。诚实边界：G 类需多模态模型（DeepSeek 无视觉，跑 G 会失败属预期）；图片不进 SQLite 会话持久化与压缩摘要（重新加载会话后图片消息丢失，TUI 回显仍保留）；token 统计不含图片字节（按 API 返回 usage 计）。
 
 ---
 
@@ -269,7 +271,7 @@
 | P3-4 | `internal/agent/task.go`（角色/上下文/摘要） |
 | P3-5 | `internal/cli/tui.go`、`cmd/bounty/main.go`（slash 命令） |
 | P4-1 | `internal/devet/`、`internal/agent/task.go`（自动验证）、`internal/serve/`（可视化） |
-| P4-3 | `cmd/bounty/main.go`（run --json）、`.github/workflows/` |
+| P4-3 | `internal/tool/builtin/bash_background.go`、`cmd/bounty/main.go`（run --json）、`.github/workflows/` |
 | P4-4 | `internal/provider/provider.go`（content blocks）、三 provider 实现 |
 
 ## 附录 B：Eval 任务集（阶段 0 已交付，2026-08-13）

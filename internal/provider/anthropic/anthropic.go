@@ -73,8 +73,9 @@ type apiMessage struct {
 }
 
 type contentBlock struct {
-	Type         string      `json:"type"` // "text", "tool_use", "tool_result", "thinking"
+	Type         string      `json:"type"` // "text", "image", "tool_use", "tool_result", "thinking"
 	Text         string      `json:"text,omitempty"`
+	Source       *imageSrc   `json:"source,omitempty"`      // image block
 	ID           string      `json:"id,omitempty"`          // tool_use
 	Name         string      `json:"name,omitempty"`        // tool_use
 	Input        interface{} `json:"input,omitempty"`       // tool_use / tool_result
@@ -83,6 +84,40 @@ type contentBlock struct {
 	Thinking     string      `json:"thinking,omitempty"`    // thinking block
 	Signature    string      `json:"signature,omitempty"`   // thinking signature
 	CacheControl *cacheCtrl  `json:"cache_control,omitempty"`
+}
+
+// imageSrc is the Anthropic base64 image source.
+type imageSrc struct {
+	Type      string `json:"type"` // "base64"
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
+// mapBlocks converts a provider.Message into Anthropic content blocks when
+// images are present; returns nil so callers fall back to plain string.
+func mapBlocks(m provider.Message) []contentBlock {
+	if len(m.Parts) == 0 {
+		return nil
+	}
+	blocks := make([]contentBlock, 0, len(m.Parts))
+	for _, part := range m.Parts {
+		switch part.Type {
+		case "image":
+			if part.Image != nil {
+				blocks = append(blocks, contentBlock{
+					Type: "image",
+					Source: &imageSrc{
+						Type:      "base64",
+						MediaType: part.Image.MediaType,
+						Data:      part.Image.Data,
+					},
+				})
+			}
+		default:
+			blocks = append(blocks, contentBlock{Type: "text", Text: part.Text})
+		}
+	}
+	return blocks
 }
 
 type cacheCtrl struct {
@@ -183,6 +218,8 @@ func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tool
 					Type: "tool_use", ID: tc.ID, Name: tc.Name, Input: input,
 				})
 			}
+			am.Content = blocks
+		} else if blocks := mapBlocks(m); blocks != nil {
 			am.Content = blocks
 		} else {
 			am.Content = m.Content

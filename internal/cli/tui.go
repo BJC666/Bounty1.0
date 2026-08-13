@@ -13,6 +13,7 @@ import (
 	"bounty/internal/control"
 	"bounty/internal/event"
 	"bounty/internal/permission"
+	"bounty/internal/provider"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -319,6 +320,9 @@ func (m *tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// P4-4: pasted image paths become multimodal content blocks.
+		text, imagePaths := extractImagePaths(text)
+
 		// Normal message — send to agent
 		m.inputBuf.Reset()
 		m.errMsg = ""
@@ -328,9 +332,12 @@ func (m *tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.turnCount++
 		m.scrollPos = 0
 		m.history = append(m.history, histEntry{kind: "user", text: text})
+		for _, img := range imagePaths {
+			m.history = append(m.history, histEntry{kind: "image", text: img})
+		}
 		m.inputHistory = append(m.inputHistory, text)
 		m.histIdx = len(m.inputHistory)
-		return m, m.sendMessage(text)
+		return m, m.sendMessage(text, imagePaths)
 	case tea.KeyBackspace:
 		s := m.inputBuf.String()
 		runes := []rune(s)
@@ -689,6 +696,8 @@ func (m *tuiModel) renderLine(h histEntry, w int) string {
 	switch h.kind {
 	case "user":
 		return accentBold.Render("● ") + creamBold.Render(trunc(h.text, w-4))
+	case "image":
+		return dimText.Render("  🖼 [图片] " + trunc(h.text, w-12))
 	case "assist":
 		return "    " + creamText.Render(trunc(h.text, w-6))
 	case "thinking":
@@ -965,8 +974,22 @@ func (m *tuiModel) showHelp() {
 	}
 }
 
-func (m *tuiModel) sendMessage(text string) tea.Cmd {
+func (m *tuiModel) sendMessage(text string, imagePaths []string) tea.Cmd {
 	return func() tea.Msg {
+		var images []provider.ImagePart
+		for _, p := range imagePaths {
+			img, err := provider.LoadImageFile(p)
+			if err != nil {
+				return agentErrMsg{err: err}
+			}
+			images = append(images, img)
+		}
+		if len(images) > 0 {
+			if err := m.ctrl.SendWithImages(context.Background(), text, images); err != nil {
+				return agentErrMsg{err: err}
+			}
+			return agentTextMsg{text: ""}
+		}
 		if err := m.ctrl.Send(context.Background(), text); err != nil {
 			return agentErrMsg{err: err}
 		}

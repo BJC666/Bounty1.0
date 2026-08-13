@@ -1,6 +1,6 @@
 # Bounty Eval 基线（阶段 0 交付）
 
-> 生成日期：2026-08-13 | 任务集：`scripts/eval/tasks.json`（30 题）
+> 生成日期：2026-08-13 | 任务集：`scripts/eval/tasks.json`（49 题：A10/B10/C10/D3/E7/F6/G3）
 > 判定规则：A=关键点命中；B=测试命令通过+禁改文件未动；C=测试通过+diff 行数≤预算；全部限 max_steps=50
 
 ## 结果
@@ -23,8 +23,8 @@
 ## 复现
 
 ```powershell
-python scripts/eval/selfcheck.py                                   # 30/30 离线自检
-python scripts/eval/runner.py --models qwen/qwen3.8-max            # 跑 30 题
+python scripts/eval/selfcheck.py                                   # 49/49 离线自检
+python scripts/eval/runner.py --models qwen/qwen3.8-max            # 跑全量 49 题
 python scripts/eval/judge.py --run scripts/eval/work/<run_id>      # 判定
 python scripts/eval/report.py --run scripts/eval/work/<run_id>     # 报告
 ```

@@ -55,10 +55,47 @@ type chatStreamOptions struct {
 
 type chatMessage struct {
 	Role      string         `json:"role"`
-	Content   string         `json:"content"`
+	Content   interface{}    `json:"content"`
 	ToolCalls []chatToolCall `json:"tool_calls,omitempty"`
 	Name      string         `json:"name,omitempty"`
 	ToolID    string         `json:"tool_call_id,omitempty"`
+}
+
+// openAIContentBlock is one element of a multimodal content array
+// (text + image_url in OpenAI-compatible format).
+type openAIContentBlock struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *imageURL `json:"image_url,omitempty"`
+}
+
+type imageURL struct {
+	URL string `json:"url"`
+}
+
+// mapContent converts a provider.Message into the wire content: plain string
+// for the legacy text-only fast path, content blocks when images are present.
+func mapContent(m provider.Message) interface{} {
+	if len(m.Parts) == 0 {
+		return m.Content
+	}
+	blocks := make([]openAIContentBlock, 0, len(m.Parts))
+	for _, part := range m.Parts {
+		switch part.Type {
+		case "image":
+			if part.Image != nil {
+				blocks = append(blocks, openAIContentBlock{
+					Type: "image_url",
+					ImageURL: &imageURL{
+						URL: "data:" + part.Image.MediaType + ";base64," + part.Image.Data,
+					},
+				})
+			}
+		default:
+			blocks = append(blocks, openAIContentBlock{Type: "text", Text: part.Text})
+		}
+	}
+	return blocks
 }
 
 type chatToolCall struct {
@@ -112,7 +149,7 @@ func (p *Provider) ContextWindow() int { return p.MaxContext }
 func (p *Provider) Stream(ctx context.Context, messages []provider.Message, tools []json.RawMessage, opts provider.StreamOpts) (<-chan provider.StreamEvent, error) {
 	chatMsgs := make([]chatMessage, len(messages))
 	for i, m := range messages {
-		cm := chatMessage{Role: m.Role, Content: m.Content, Name: m.ToolName, ToolID: m.ToolID}
+		cm := chatMessage{Role: m.Role, Content: mapContent(m), Name: m.ToolName, ToolID: m.ToolID}
 		for _, tc := range m.ToolCalls {
 			cm.ToolCalls = append(cm.ToolCalls, chatToolCall{
 				ID: tc.ID, Type: "function",

@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -30,7 +31,11 @@ func TestPolicyAllowsWorkspaceWrite(t *testing.T) {
 func TestPolicyBlocksOutsideWrite(t *testing.T) {
 	ws := t.TempDir()
 	p := testPolicy(t, ws, true)
-	err := p.Check(`echo pwn > C:\Windows\Temp\escape.txt`)
+	outside := `C:\Windows\Temp\escape.txt`
+	if runtime.GOOS != "windows" {
+		outside = `/etc/passwd`
+	}
+	err := p.Check(`echo pwn > ` + outside)
 	if err == nil || !strings.Contains(err.Error(), "沙箱写策略") {
 		t.Fatalf("outside write not blocked: %v", err)
 	}
@@ -45,6 +50,9 @@ func TestPolicyAllowsListedExternalWrite(t *testing.T) {
 }
 
 func TestPolicyBlocksForbidWrite(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("System32 模式为 Windows 专属路径语义")
+	}
 	ws := t.TempDir()
 	p := testPolicy(t, ws, true)
 	err := p.Check(`echo x > C:\Windows\System32\drivers\pwn.sys`)
@@ -54,6 +62,9 @@ func TestPolicyBlocksForbidWrite(t *testing.T) {
 }
 
 func TestPolicyBlocksForbidRead(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows/* 模式为 Windows 专属路径语义")
+	}
 	ws := t.TempDir()
 	p := testPolicy(t, ws, true)
 	err := p.Check(`type C:\Windows\win.ini`)
