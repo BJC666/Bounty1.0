@@ -2,11 +2,14 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"bounty/internal/memory"
 	"bounty/internal/provider"
 )
 
@@ -49,21 +52,18 @@ func (br *BackgroundReviewer) ShouldRun(turnCount int) bool {
 	return true
 }
 
-// RunReview spawns a lightweight reflection on the conversation.
-// Returns suggested memory/skill updates (if any).
-// memoryDir is reserved for future use (persisting extracted memories to disk).
+// RunReview spawns a lightweight reflection on the conversation. The model
+// is asked for durable facts as a JSON array; safe entries are persisted to
+// <memoryDir>/.agent/memory (project auto-memory) so they survive into later
+// sessions. Entries carrying injection/self-replication markers are rejected.
 func (br *BackgroundReviewer) RunReview(ctx context.Context, messages []provider.Message, prov provider.Provider, memoryDir string) *ReviewResult {
-	_ = memoryDir // reserved for future use
-
 	ctx, cancel := context.WithTimeout(ctx, br.cfg.MaxWait)
 	defer cancel()
 
-	// Build a compact review prompt
 	var convBuilder strings.Builder
-	convBuilder.WriteString("Review this conversation and suggest:\n")
-	convBuilder.WriteString("1. Any facts worth saving to project memory\n")
-	convBuilder.WriteString("2. Any reusable skills that could be extracted\n")
-	convBuilder.WriteString("\nConversation:\n")
+	convBuilder.WriteString("Review this conversation and extract durable facts worth persisting to project auto-memory (user preferences, conventions, decisions, lessons learned).\n")
+	convBuilder.WriteString("Respond with ONLY a JSON array of objects with keys \"name\" (short kebab-case), \"description\" (one line), \"content\" (the fact itself). If nothing is worth saving, respond with []. Do not include any other text.\n\n")
+	convBuilder.WriteString("Conversation:\n")
 
 	// Only include last 10 user/assistant exchanges
 	count := 0
@@ -87,26 +87,115 @@ func (br *BackgroundReviewer) RunReview(ctx context.Context, messages []provider
 		return nil
 	}
 
-	var result strings.Builder
+	var resultText strings.Builder
 	for ev := range ch {
+		if ev.Err != nil {
+			return nil
+		}
 		if ev.Delta != nil && ev.Delta.Content != "" {
-			result.WriteString(ev.Delta.Content)
+			resultText.WriteString(ev.Delta.Content)
 		}
 		if ev.Done {
 			break
 		}
 	}
 
-	return &ReviewResult{
-		Suggestion: result.String(),
+	res := &ReviewResult{
+		Suggestion: resultText.String(),
 		Timestamp:  time.Now(),
 	}
+	if memoryDir != "" {
+		res.Saved, res.Rejected = persistSuggestions(memoryDir, res.Suggestion)
+	}
+	return res
+}
+
+// memorySuggestion is the structured shape the reviewer is asked to emit.
+type memorySuggestion struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Content     string `json:"content"`
+}
+
+// extractSuggestions parses the reviewer output leniently: it accepts a JSON
+// array, a bare JSON object, or text with an embedded JSON block.
+func extractSuggestions(text string) []memorySuggestion {
+	trimmed := strings.TrimSpace(text)
+	var payload string
+	switch {
+	case strings.HasPrefix(trimmed, "["):
+		if end := strings.LastIndex(trimmed, "]"); end >= 0 {
+			payload = trimmed[:end+1]
+		}
+	case strings.HasPrefix(trimmed, "{"):
+		if end := strings.LastIndex(trimmed, "}"); end >= 0 {
+			payload = "[" + trimmed[:end+1] + "]"
+		}
+	}
+	if payload == "" {
+		return nil
+	}
+	var items []memorySuggestion
+	if err := json.Unmarshal([]byte(payload), &items); err != nil {
+		return nil
+	}
+	return items
+}
+
+// persistSuggestions saves safe suggestions to the project memory store and
+// reports the entries it rejected (injection / self-replication markers).
+func persistSuggestions(memoryDir string, text string) (saved []memory.Entry, rejected []string) {
+	items := extractSuggestions(text)
+	for _, it := range items {
+		name := strings.TrimSpace(it.Name)
+		desc := strings.TrimSpace(it.Description)
+		content := strings.TrimSpace(it.Content)
+		if content == "" {
+			continue
+		}
+		if !memory.IsSafeAll(name + " " + desc + " " + content) {
+			label := name
+			if label == "" {
+				label = desc
+			}
+			if label == "" {
+				label = truncateForLabel(content)
+			}
+			rejected = append(rejected, label)
+			continue
+		}
+		if name == "" {
+			sum := sha256.Sum256([]byte(desc + content))
+			name = fmt.Sprintf("auto-%x", sum[:4])
+		}
+		if desc == "" {
+			desc = name
+		}
+		if err := memory.NewRememberStore(memoryDir).Save(name, desc, content); err != nil {
+			continue
+		}
+		saved = append(saved, memory.Entry{Name: name, Description: desc, Content: content, CreatedAt: time.Now()})
+	}
+	return saved, rejected
+}
+
+func truncateForLabel(s string) string {
+	r := []rune(s)
+	if len(r) <= 40 {
+		return s
+	}
+	return string(r[:40]) + "..."
 }
 
 // ReviewResult holds the output of a background review.
 type ReviewResult struct {
 	Suggestion string
 	Timestamp  time.Time
+	// Saved lists entries persisted to project auto-memory.
+	Saved []memory.Entry
+	// Rejected lists suggested entries refused because they carried
+	// injection / self-replication markers.
+	Rejected []string
 }
 
 // SkillNudge generates a prompt to encourage skill creation.

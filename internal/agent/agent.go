@@ -59,6 +59,13 @@ type Checkpointer interface {
 	GetTurn() int
 }
 
+// RepoMapProvider supplies a repository overview that changes as files
+// change. Refresh returns the rendered block and whether it changed since
+// the last call.
+type RepoMapProvider interface {
+	Refresh() (block string, changed bool)
+}
+
 // Options configures an Agent. Zero values get sensible defaults.
 type Options struct {
 	MaxSteps      int
@@ -74,6 +81,12 @@ type Options struct {
 	LearningGraph *LearningGraph
 	// Compact overrides compaction thresholds and the summarizer; nil = defaults.
 	Compact *CompactConfig
+	// MemoryDir is the project root whose .agent/memory receives background
+	// review auto-memories. Empty disables auto-persistence.
+	MemoryDir string
+	// RepoMap, when set, refreshes the repo-map section of the system prompt
+	// whenever repository files change (per user turn).
+	RepoMap RepoMapProvider
 }
 
 // Agent is the core turn-taking loop: stream LLM output, collect tool calls,
@@ -114,6 +127,14 @@ type Agent struct {
 	// Compaction
 	compactCfg *CompactConfig
 
+	// Project root for background-review auto-memory persistence.
+	memoryDir string
+
+	// baseSystemPrompt is the system prompt with the repo-map section
+	// stripped; refreshRepoMap re-appends the latest block to it.
+	baseSystemPrompt string
+	repoMap          RepoMapProvider
+
 	// Cached-prefix tracking for accurate cache hit/miss stats (the cacheable
 	// region of the previous request: all messages except the last one).
 	lastCachedLen  int
@@ -132,22 +153,25 @@ func New(prov provider.Provider, tools *tool.Registry, session *Session, opts Op
 		opts.Sink = event.Discard
 	}
 	return &Agent{
-		prov:         prov,
-		tools:        tools,
-		session:      session,
-		maxSteps:     opts.MaxSteps,
-		temp:         opts.Temperature,
-		sink:         opts.Sink,
-		gate:         opts.Gate,
-		compactCfg:   opts.Compact,
-		hooks:        opts.Hooks,
-		asker:        opts.Asker,
-		checkpointer: opts.Checkpointer,
-		maxToolOut:   opts.MaxToolOut,
-		stormSig:     make(map[string]int),
-		insights:     opts.Insights,
-		reviewer:     opts.Reviewer,
-		learnGraph:   opts.LearningGraph,
+		prov:             prov,
+		tools:            tools,
+		session:          session,
+		maxSteps:         opts.MaxSteps,
+		temp:             opts.Temperature,
+		sink:             opts.Sink,
+		gate:             opts.Gate,
+		compactCfg:       opts.Compact,
+		memoryDir:        opts.MemoryDir,
+		baseSystemPrompt: stripRepoMap(session.SystemPrompt),
+		repoMap:          opts.RepoMap,
+		hooks:            opts.Hooks,
+		asker:            opts.Asker,
+		checkpointer:     opts.Checkpointer,
+		maxToolOut:       opts.MaxToolOut,
+		stormSig:         make(map[string]int),
+		insights:         opts.Insights,
+		reviewer:         opts.Reviewer,
+		learnGraph:       opts.LearningGraph,
 	}
 }
 
@@ -158,6 +182,28 @@ func (a *Agent) SetSession(s *Session) {
 	a.session = s
 	a.stormSig = make(map[string]int)
 	a.blockedTurnStreak = 0
+}
+
+// refreshRepoMap re-renders the repo map when repository files changed and
+// swaps the updated block into the system prompt.
+func (a *Agent) refreshRepoMap(sess *Session) {
+	if a.repoMap == nil {
+		return
+	}
+	block, changed := a.repoMap.Refresh()
+	if !changed || block == "" {
+		return
+	}
+	sess.SetSystemPrompt(a.baseSystemPrompt + block)
+}
+
+// stripRepoMap removes a trailing repo-map section (and everything after
+// it) so a fresh block can be appended later.
+func stripRepoMap(prompt string) string {
+	if idx := strings.Index(prompt, "\n## Repo Map"); idx >= 0 {
+		return prompt[:idx]
+	}
+	return prompt
 }
 
 // Session returns the current session.
@@ -223,6 +269,8 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 	}
 
 	sess.Add(provider.Message{Role: "user", Content: input})
+
+	a.refreshRepoMap(sess)
 
 	for step := 0; step < a.maxSteps; step++ {
 		if err := ctx.Err(); err != nil {
@@ -370,11 +418,26 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 		// Background review check (non-blocking).
 		if a.reviewer != nil && a.reviewer.ShouldRun(step) {
 			go func() {
-				result := a.reviewer.RunReview(context.Background(), sess.Snapshot(), a.prov, "")
-				if result != nil && result.Suggestion != "" {
+				result := a.reviewer.RunReview(context.Background(), sess.Snapshot(), a.prov, a.memoryDir)
+				if result == nil {
+					return
+				}
+				if result.Suggestion != "" {
 					a.sink.Emit(event.Event{
 						Type:      "notification",
 						TextDelta: "Background review: " + result.Suggestion,
+					})
+				}
+				for _, e := range result.Saved {
+					a.sink.Emit(event.Event{
+						Type:      "notification",
+						TextDelta: fmt.Sprintf("🧠 Auto-memory saved: %s — %s", e.Name, e.Description),
+					})
+				}
+				for _, name := range result.Rejected {
+					a.sink.Emit(event.Event{
+						Type:      "notification",
+						TextDelta: fmt.Sprintf("⚠️ Memory suggestion rejected (injection/self-replication markers): %s", name),
 					})
 				}
 			}()
@@ -471,9 +534,10 @@ func (a *Agent) executeOne(ctx context.Context, tc provider.ToolCall) toolResult
 	result, err := t.Execute(ctx, tc.Args)
 
 	if len(result) > a.maxToolOut {
+		original := len(result)
 		runes := []rune(result)
 		if len(runes) > a.maxToolOut/4 {
-			result = string(runes[:a.maxToolOut/4]) + "\n... [truncated]"
+			result = string(runes[:a.maxToolOut/4])
 		} else {
 			// Multi-byte content within the rune budget but over the byte
 			// cap — trim to the cap without splitting a UTF-8 rune.
@@ -484,8 +548,9 @@ func (a *Agent) executeOne(ctx context.Context, tc provider.ToolCall) toolResult
 					keep--
 				}
 			}
-			result = result[:keep] + "\n... [truncated]"
+			result = result[:keep]
 		}
+		result += fmt.Sprintf("\n...[truncated: 原始输出 %d 字节，超出工具输出预算 %d 字节。请用更精确的参数缩小结果。]", original, a.maxToolOut)
 	}
 
 	if a.hooks != nil {

@@ -166,7 +166,7 @@
 
 | 功能 | Bounty | OpenClaw | Claude Code | Hermes | Reasonix |
 |------|:---:|:---:|:---:|:---:|:---:|
-| Background Review | ✅ 后台反思 | ❌ | ❌ | ✅ daemon线程 | ❌ |
+| Background Review | ✅ 反思+自动记忆落库 | ❌ | ❌ | ✅ daemon线程 | ❌ |
 | Skill Nudge | ✅ | ❌ | ❌ | ✅ | ❌ |
 | Curator调度 | ✅ curator | ❌ | ❌ | ✅ 7天周期 | ❌ |
 | 技能自动创建 | ❌ | ❌ | ❌ | ✅ | ❌ |

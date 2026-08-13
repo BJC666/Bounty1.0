@@ -15,8 +15,8 @@ import (
 
 type GrepTool struct{}
 
-func (GrepTool) Name() string   { return "grep" }
-func (GrepTool) ReadOnly() bool { return true }
+func (GrepTool) Name() string      { return "grep" }
+func (GrepTool) ReadOnly() bool    { return true }
 func (GrepTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (GrepTool) Description() string {
 	return "Search file contents with regex. Prefers ripgrep (rg) when available."
@@ -33,7 +33,7 @@ func (GrepTool) Execute(ctx context.Context, args json.RawMessage) (string, erro
 	if err := json.Unmarshal(args, &params); err != nil {
 		return "", err
 	}
-	cmdArgs := []string{"-n", "--heading", "-i"}
+	cmdArgs := []string{"-n", "-i"}
 	if params.Glob != "" {
 		cmdArgs = append(cmdArgs, "-g", params.Glob)
 	}
@@ -53,25 +53,25 @@ func (GrepTool) Execute(ctx context.Context, args json.RawMessage) (string, erro
 		}
 		return string(output), fmt.Errorf("grep failed: %w", err)
 	}
-	out := string(output)
-	if len(out) > 32000 {
-		runes := []rune(out)
-		if len(runes) > 32000/4 {
-			out = string(runes[:32000/4]) + "\n... [truncated]"
-		} else {
-			// Multi-byte content within the rune budget but over the byte
-			// cap — trim to the cap without splitting a UTF-8 rune.
-			keep := len(out)
-			for keep > 32000 {
-				keep--
-				for keep > 0 && (out[keep]&0xC0) == 0x80 {
-					keep--
-				}
-			}
-			out = out[:keep] + "\n... [truncated]"
-		}
-	}
+	out := capMatchLines(string(output))
 	return out, nil
+}
+
+// grepMaxMatches caps grep output at the first 300 matches and tells the
+// model how to narrow the search.
+const grepMaxMatches = 300
+
+// capMatchLines keeps the first grepMaxMatches lines (each line is one match
+// because rg runs with -n and without --heading) and appends a narrowing
+// hint with the true total.
+func capMatchLines(out string) string {
+	trimmed := strings.TrimRight(out, "\n")
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) <= grepMaxMatches {
+		return out
+	}
+	shown := strings.Join(lines[:grepMaxMatches], "\n")
+	return shown + fmt.Sprintf("\n...[grep truncated: 共 %d 条匹配，仅显示前 %d 条。请收窄 pattern、glob 或指定 path 缩小范围后重试。]", len(lines), grepMaxMatches)
 }
 
 // grepFallback searches files using Go's regexp when ripgrep is not available.
@@ -115,6 +115,10 @@ func grepFallback(params struct {
 
 	if len(results) == 0 {
 		return "No matches found.", nil
+	}
+	if len(results) > grepMaxMatches {
+		shown := strings.Join(results[:grepMaxMatches], "\n")
+		return shown + fmt.Sprintf("\n...[grep truncated: 共 %d 条匹配，仅显示前 %d 条。请收窄 pattern、glob 或指定 path 缩小范围后重试。]", len(results), grepMaxMatches), nil
 	}
 	out := strings.Join(results, "\n")
 	if len(out) > 32000 {

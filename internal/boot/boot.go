@@ -32,6 +32,7 @@ import (
 	"bounty/internal/provider/ollama"
 	"bounty/internal/provider/openai"
 	"bounty/internal/provider/openai_native"
+	"bounty/internal/repomap"
 	"bounty/internal/sandbox"
 	"bounty/internal/secrets"
 	"bounty/internal/skill"
@@ -104,6 +105,8 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		dockerRunner = ds.Run
 	}
 
+	repoMapMgr := repomap.NewManager(workspaceRootFor(cfg))
+
 	builtin.RegisterAll(reg, builtin.ToolOptions{
 		BashTimeout:      120e9,
 		ProjectRoot:      cfg.Sandbox.WorkspaceRoot,
@@ -117,6 +120,7 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		fmt.Fprintf(os.Stderr, "DeVET: %v (tools will be unavailable)\n", devetErr)
 	}
 	builtin.RegisterDeVET(reg, devetBackend)
+	reg.Add(builtin.NewRepoMapTool(repoMapMgr))
 
 	// 5b. Connect MCP plugins
 	mcpHost := mcp.NewHost()
@@ -167,8 +171,13 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		filepath.Join(dataDir(), "agents"),
 	})
 
-	// 8. Build system prompt
-	systemPrompt := buildSystemPrompt(cfg, modelName, memDocs, skillStore.Index(), cmdStore)
+	// 8. Build system prompt (repo map appended separately so the agent can
+	// refresh it per turn without rebuilding the static base).
+	basePrompt := buildSystemPrompt(cfg, modelName, memDocs, skillStore.Index(), cmdStore)
+	systemPrompt := basePrompt
+	if block := repoMapMgr.Render(); block != "" {
+		systemPrompt = basePrompt + block
+	}
 
 	// 9. Create Session
 	session := agent.NewSession(systemPrompt)
@@ -234,6 +243,8 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 			Ratio:      cfg.Agent.CompactRatio,
 			ForceRatio: cfg.Agent.CompactForceRatio,
 		},
+		MemoryDir: workspaceRootFor(cfg),
+		RepoMap:   repoMapMgr,
 	})
 
 	// 12b. Register subagent tools onto the same registry
@@ -476,6 +487,7 @@ func buildSystemPrompt(cfg *config.Config, modelName string, docs []memory.Doc, 
 	sb.WriteString("- Use tools ONLY when you need file access, code search, web search, shell commands, or other specific capabilities.\n")
 	sb.WriteString("- Never call web_search for greetings or small talk.\n")
 	sb.WriteString("- If unsure whether to use a tool, default to answering directly.\n")
+	sb.WriteString("- `memory_search` retrieves facts saved by `remember` (user preferences, conventions, lessons learned); prefer it over guessing when the user references earlier agreements.\n")
 	sb.WriteString("\n## DeVET Security Tools\n")
 	sb.WriteString("You have DeVET multi-agent delegation verification tools available:\n")
 	sb.WriteString("- `devet_health` — check DeVET backend status\n")
@@ -509,6 +521,24 @@ func buildSystemPrompt(cfg *config.Config, modelName string, docs []memory.Doc, 
 		}
 		sb.WriteString(doc.Content + "\n")
 	}
+	sb.WriteString("## Auto Memory\n")
+	if recent, merr := memory.Recent(workspaceRoot, autoMemoryInjectionLimit); merr == nil && len(recent) > 0 {
+		for _, e := range recent {
+			fields := e.Name + " " + e.Description + " " + e.Content
+			if hits := memory.ScanAll(fields); len(hits) > 0 {
+				sb.WriteString(fmt.Sprintf("<data source=\"auto-memory\" warning=\"injection markers: %s\">\n%s\n</data>\n",
+					strings.Join(hits, ", "), truncateRunes(e.Content, 400)))
+				continue
+			}
+			desc := e.Description
+			if desc == "" {
+				desc = e.Name
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** — %s: %s\n", e.Name, desc, truncateRunes(e.Content, 200)))
+		}
+	} else {
+		sb.WriteString("(none yet)\n")
+	}
 	sb.WriteString("\n## Available Skills\n")
 	for _, sk := range skills {
 		tag := ""
@@ -520,6 +550,31 @@ func buildSystemPrompt(cfg *config.Config, modelName string, docs []memory.Doc, 
 	sb.WriteString("\n")
 	sb.WriteString(cmdStore.IndexBlock())
 	return sb.String()
+}
+
+// autoMemoryInjectionLimit caps how many recent auto-memory entries are
+// injected into the system prompt at startup (most recent first).
+const autoMemoryInjectionLimit = 8
+
+// workspaceRootFor returns the configured workspace root, falling back to
+// the process working directory when unset.
+func workspaceRootFor(cfg *config.Config) string {
+	if cfg.Sandbox.WorkspaceRoot != "" {
+		return cfg.Sandbox.WorkspaceRoot
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return ""
+}
+
+// truncateRunes shortens s to at most n runes without splitting UTF-8.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "..."
 }
 
 // convertHooks translates config.HookConfig values into the hook package's

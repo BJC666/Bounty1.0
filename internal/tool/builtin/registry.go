@@ -32,6 +32,7 @@ func RegisterAll(reg *tool.Registry, opts ToolOptions) {
 	reg.Add(&WebSearchTool{})
 	reg.Add(&CodeIndexTool{})
 	reg.Add(&RememberTool{ProjectRoot: opts.ProjectRoot})
+	reg.Add(&MemorySearchTool{ProjectRoot: opts.ProjectRoot})
 	reg.Add(&BrowserTool{})
 }
 

@@ -49,7 +49,7 @@ created: %s
 ---
 
 %s
-`, name, description, time.Now().Format(time.RFC3339), content)
+`, name, description, time.Now().Format(time.RFC3339Nano), content)
 
 	if err := os.WriteFile(path, []byte(entry), 0644); err != nil {
 		return err

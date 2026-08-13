@@ -208,7 +208,7 @@ def judge_one(task, task_dir):
             note = f"（产物自检：{'测试通过' if rc == 0 else '测试失败 rc=' + str(rc)}）"
         return {**base(run), "verdict": False, "reason": reason + note}
 
-    if task["category"] == "A":
+    if task["category"] in ("A", "D"):
         ok, reason = judge_a(task, run)
         return {**base(run), "verdict": ok, "reason": reason,
                 "check_rc": None, "check_output_tail": "",

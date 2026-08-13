@@ -604,6 +604,54 @@
         "package.json"
       ],
       "max_diff_lines": 40
+    },
+    {
+      "id": "D1",
+      "category": "D",
+      "fixture": "py-stats",
+      "title": "记忆闭环：保存并复述偏好",
+      "prompt": "请先用 remember 工具保存一条记忆：name=user-pref-language、description=用户语言偏好、content=用户希望所有回答都使用简体中文。保存成功后，再用 memory_search 工具检索这条记忆，并在最终回答里复述检索到的内容。",
+      "golden_answer": "已保存并检索到记忆 user-pref-language：用户希望所有回答都使用简体中文。",
+      "critical_patterns": [
+        "简体中文",
+        "user-pref-language"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null
+    },
+    {
+      "id": "D2",
+      "category": "D",
+      "fixture": "py-stats",
+      "title": "记忆闭环：保存两条并检索相关项",
+      "prompt": "请先用 remember 保存两条记忆：①name=coding-style、description=编码风格、content=用户代码偏好 snake_case 命名和 4 空格缩进；②name=deploy-host、description=部署主机、content=生产环境部署在 192.0.2.10。然后用 memory_search 检索关键词「命名」，并说明哪条记忆更相关、复述其内容。",
+      "golden_answer": "检索「命名」更相关的记忆是 coding-style：用户代码偏好 snake_case 命名和 4 空格缩进。",
+      "critical_patterns": [
+        "coding-style",
+        "snake_case"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null
+    },
+    {
+      "id": "D3",
+      "category": "D",
+      "fixture": "py-stats",
+      "title": "记忆闭环：空查询列出最近记忆",
+      "prompt": "请先用 remember 保存一条记忆：name=fav-tool、description=偏好工具、content=用户偏爱使用 pytest 而不是 unittest。然后用 memory_search 以空查询列出最近记忆，并在最终回答中复述列出结果里 fav-tool 的内容。",
+      "golden_answer": "最近记忆列表中 fav-tool 的内容是：用户偏爱使用 pytest 而不是 unittest。",
+      "critical_patterns": [
+        "fav-tool",
+        "pytest"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null
     }
   ]
 }

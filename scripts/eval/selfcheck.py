@@ -65,16 +65,16 @@ def main():
     try:
         for task in tasks:
             tid = task["id"]
-            if task["category"] == "A":
+            if task["category"] in ("A", "D"):
                 golden = (task.get("golden_answer") or "").lower()
                 missing = [p for p in task["critical_patterns"] if p.lower() not in golden]
                 any_missing = [p for p in task.get("any_of", []) if p.lower() not in golden]
                 any_ok = not task.get("any_of") or len(any_missing) < len(task["any_of"])
                 if not missing and any_ok:
-                    print(f"[ok] A {tid}: golden 命中全部关键点")
+                    print(f"[ok] {task["category"]} {tid}: golden 命中全部关键点")
                 else:
                     fails.append(f"A {tid}: golden 未命中 missing={missing} any_of_missing={any_missing}")
-                    print(f"[FAIL] A {tid}: golden 未命中 {missing} {any_missing}")
+                    print(f"[FAIL] {task["category"]} {tid}: golden 未命中 {missing} {any_missing}")
                 continue
 
             cwd = tmp / tid
@@ -103,7 +103,7 @@ def main():
         for f in fails:
             print("  -", f)
         sys.exit(1)
-    print("\nSELFCHECK OK: 30/30 任务自检通过")
+    print(f"\nSELFCHECK OK: {len(tasks)}/{len(tasks)} 任务自检通过")
 
 
 if __name__ == "__main__":

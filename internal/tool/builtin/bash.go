@@ -3,10 +3,11 @@ package builtin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
-	"syscall"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -22,8 +23,8 @@ type BashTool struct {
 	DockerRunner func(ctx context.Context, command string) (string, error)
 }
 
-func (b *BashTool) Name() string   { return "bash" }
-func (b *BashTool) ReadOnly() bool { return false }
+func (b *BashTool) Name() string      { return "bash" }
+func (b *BashTool) ReadOnly() bool    { return false }
 func (b *BashTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (b *BashTool) Description() string {
 	return "Execute a shell command. Use for running tests, building, file operations, git commands, and other terminal tasks."
@@ -92,10 +93,32 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 		return "", &TimeoutError{Command: params.Command, Timeout: timeout}
 	}
 	out := decodeOutput(output)
+	out = trimHeadTail(out, bashHeadRunes, bashTailRunes)
 	if err != nil {
 		return out, &ExecError{Command: params.Command, Output: out, Err: err}
 	}
 	return out, nil
+}
+
+// bashHeadRunes / bashTailRunes: bash output keeps the first and last 15000
+// runes each so the agent sees startup and failure context while the middle
+// (bulk logs) is elided.
+const (
+	bashHeadRunes = 15000
+	bashTailRunes = 15000
+)
+
+// trimHeadTail keeps headRunes from the start and tailRunes from the end of
+// s, inserting an explanatory notice in the middle. Unchanged when the input
+// fits within the budget.
+func trimHeadTail(s string, headRunes, tailRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= headRunes+tailRunes {
+		return s
+	}
+	head := string(runes[:headRunes])
+	tail := string(runes[len(runes)-tailRunes:])
+	return head + fmt.Sprintf("\n...[bash output truncated: 共 %d 字符，保留头尾各 %d 字符。可把输出重定向到文件后分段读取。]\n", len(runes), headRunes) + tail
 }
 
 // prepareCommand rewrites unquoted Windows drive paths (D:\文件夹\a.png) into
@@ -195,7 +218,9 @@ type TimeoutError struct {
 	Timeout time.Duration
 }
 
-func (e *TimeoutError) Error() string { return "command timed out after " + e.Timeout.String() + ": " + e.Command }
+func (e *TimeoutError) Error() string {
+	return "command timed out after " + e.Timeout.String() + ": " + e.Command
+}
 
 type ExecError struct {
 	Command string

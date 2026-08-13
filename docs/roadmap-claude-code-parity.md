@@ -131,15 +131,18 @@
 - 现状：remember 只写不读；后台反思只发通知。
 - 目标：新增 `memory_search` 只读工具（FTS5 检索 remember 库）；`buildSystemPrompt` 启动时注入 Top-N（按最近使用/相关性）；后台反思结果生成"建议记忆条目"并自动落库（低风险条目）或提示用户（高风险条目）。
 - 验收：跨会话测试——会话 A 记住偏好 → 会话 B 提问，断言回答用了记忆（Eval 加 3 道记忆题）。
+- 状态（2026-08-13）：✅ 已交付——`memory_search` 只读工具（关键词/中文二元组评分检索，空查询列最近记忆）；`buildSystemPrompt` 启动注入最近 8 条自动记忆（注入特征条目包 `<data>` 边界）；后台反思改为结构化 JSON 抽取并自动落库（低风险条目），注入/自我复制标记条目拒绝并通知；`created` 时间戳升级 RFC3339Nano 保证排序稳定。测试全绿：`internal/memory/search_test.go`（9 项）、`memory_search_test.go`（5 项）、`background_review_test.go`（7 项）、`boot_test.go`（2 项，会话 A 写入→会话 B 系统提示注入断言）；Eval 新增 D1–D3 记忆题（judge/selfcheck 支持 D 类，33/33 自检通过）。
 
 **P1-3 Repo Map（S4）**
 - 目标：启动+文件变更时增量索引（复用 `code_index.go` 正则，加文件树与依赖边），每轮在系统提示后注入 ≤3000 token 的仓库概览；变更即失效重建。
 - 验收：Eval A 类（仓库理解）步数下降 ≥30%（对照阶段 0 基线）。
+- 状态（2026-08-13）：✅ 代码侧已交付——新增 `internal/repomap`（文件树+符号索引+内部依赖边，go.mod 模块路径/相对导入/顶层目录分类；指纹=路径|大小|mtime 变更即重建）；`repo_map` 只读工具强制刷新；启动注入 + 每用户轮刷新（`Options.RepoMap` 接口，`stripRepoMap` 替换而非追加，上限 10000 rune≈2500 token）；`code_index` 改为复用 repomap 单一正则源。测试全绿：`map_test.go`（7 项）、`repo_map_test.go`（4 项）、`repomap_test.go`（2 项）。验收指标（A 类步数 ↓30%）待真实模型跑分，需 QWEN token，另行执行。
 
 **P1-4 工具结果预算（配合 S1）**
 - 现状：`maxToolOut` 32KB 固定截断，无定位提示。
 - 目标：分工具预算——read_file 默认 2000 行上限+offset/limit 行号提示；grep 匹配上限 300 条并提示收窄；bash 输出保留头尾各 15KB；截断信息写清"共多少、如何继续读"。
 - 验收：Eval 平均 token/任务下降 ≥20%，且 pass@1 不降。
+- 状态（2026-08-13）：✅ 已交付——read_file 默认 2000 行上限，截断提示含总行数/显示区间/续读 offset；grep（rg 与原生 fallback）匹配上限 300 条，提示收窄 pattern/glob/path；bash 输出保留头尾各 15000 字符，中段提示重定向续读；agent 通用 32KB 兜底截断附原始字节数。测试全绿：`truncate_test.go`（10 项）。验收指标（token/任务 ↓20%）待真实模型跑分。
 
 **P1-5 Todo 宿主状态与计划契约（S9）**
 - 目标：`todo_write` 落 SQLite；plan 姿态下系统提示强制"先输出结构化计划+todo，再动手"；每轮把当前 todo 摘要（≤10 行）注入 system 尾部；完成态变化通知 UI。
