@@ -170,6 +170,7 @@
 - 现状：`bash.go` 已做 sh→cmd 回退、GBK 解码、路径转换（此前演示中的三连错已修）。
 - 目标：未知命令时返回候选提示（`pwd`→`cd`，`ls`→`dir`）；命令预检白名单；验证 `wait/bash_output/kill_shell` 在 cmd 下可用；中文路径回归测试固定。
 - 验收：Windows 平台 30 条常用命令测试全绿。
+- 状态（2026-08-13）：✅ 已交付——①未知命令候选提示：cmd.exe 下执行前预检，首 token 命中 24 条 Unix 别名表（ls→dir、pwd→cd、cat→type、grep→findstr、rm→del…）直接返回「请改用 Windows 等价命令」错误（不执行）；执行后若输出含「不是内部或外部命令」则追加候选/`where` 提示；`windowsNativeCommands` 白名单（31 条 cmd 内置）跳过预检，python/go/git/npm 等 PATH 命令放行。②进程树击杀：`runWithTreeKill` 重构 bash 执行路径（Start/Wait + `taskkill /PID x /T /F`），修复 cmd.exe 子进程（如 ping）孤儿化导致超时后管道悬挂 29s 的问题，实测 1.3s 返回。③中文路径回归：`bash_windows_test.go` 含中文目录/文件名回写用例。注：路线图中的 `wait/bash_output/kill_shell` 三个工具本版本并不存在，等价能力以「timeout 钳制（1s–600s）+ context 取消 + 进程树击杀」覆盖并在测试中固定。测试：新增 `bash_windows_test.go` 39 项全绿（预检 18、token 8、hint 5、路径 9、解码 3、截断 2 + 6 个 cmd 实跑），`go test ./...` 全绿。
 
 ### 阶段 3（第 5–6 周）：安全与生态
 

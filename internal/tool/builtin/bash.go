@@ -1,11 +1,13 @@
 package builtin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -75,26 +77,34 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 	if shell == "sh" {
 		command = prepareCommand(command)
 	}
+	// P2-4: under cmd.exe, fail fast with a Windows-equivalent suggestion
+	// when the command is a known Unix-only tool (ls/pwd/cat/...).
+	if shell == "cmd" {
+		if hint, blocked := precheckWindowsCommand(command); blocked {
+			return "", fmt.Errorf("cmd.exe 不识别 %s，请改用 Windows 等价命令：%s（命令未执行，可直接重试）", firstCommandToken(command), hint)
+		}
+	}
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" && shell == "cmd" {
 		// Windows 上 os/exec 会把含引号的参数转义成 \" 形式，而 cmd.exe
 		// 不识别 \" 转义，导致带引号命令（如 python -c "..."）被截断。
 		// 用 SysProcAttr.CmdLine 原样传递命令行，绕过 os/exec 的转义。
-		cmd = exec.CommandContext(execCtx, shell)
+		cmd = exec.Command(shell)
 		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: shell + " " + shellFlag + " " + command}
 	} else {
-		cmd = exec.CommandContext(execCtx, shell, shellFlag, command)
+		cmd = exec.Command(shell, shellFlag, command)
 	}
 	if b.Sandbox != nil {
 		cmd = b.Sandbox(cmd)
 	}
-	output, err := cmd.CombinedOutput()
+	output, err := runWithTreeKill(cmd, execCtx)
 	if execCtx.Err() == context.DeadlineExceeded {
 		return "", &TimeoutError{Command: params.Command, Timeout: timeout}
 	}
 	out := decodeOutput(output)
 	out = trimHeadTail(out, bashHeadRunes, bashTailRunes)
 	if err != nil {
+		out = maybeAppendWindowsHint(shell, params.Command, out)
 		return out, &ExecError{Command: params.Command, Output: out, Err: err}
 	}
 	return out, nil
@@ -229,3 +239,129 @@ type ExecError struct {
 }
 
 func (e *ExecError) Error() string { return e.Output + "\n" + e.Err.Error() }
+
+// windowsAlias maps Unix-only commands to their cmd.exe equivalents. The
+// suggestion strings keep the actionable form the model can re-emit directly.
+var windowsAlias = map[string]string{
+	"ls":     "dir（ls -la → dir /a）",
+	"pwd":    "cd",
+	"cat":    "type",
+	"cp":     "copy",
+	"mv":     "move",
+	"rm":     "del（危险删除会先过权限门）",
+	"touch":  "type nul > 文件名",
+	"grep":   "findstr",
+	"clear":  "cls",
+	"which":  "where",
+	"uname":  "ver",
+	"sleep":  "timeout /t 秒数",
+	"head":   `powershell -Command "Get-Content 文件 -TotalCount N"`,
+	"tail":   `powershell -Command "Get-Content 文件 -Tail N"`,
+	"wc":     `find /c /v ""`,
+	"chmod":  "icacls",
+	"export": "set",
+	"env":    "set",
+	"man":    "help",
+	"diff":   "fc",
+	"ln":     "mklink",
+	"kill":   "taskkill /PID 进程号 /F",
+	"ps":     "tasklist",
+	"open":   "start",
+}
+
+// windowsNativeCommands is the pre-check whitelist: commands known to exist
+// in cmd.exe. Unix aliases are blocked with a suggestion; everything else
+// (python/go/git/npm installed on PATH) passes through untouched.
+var windowsNativeCommands = map[string]bool{
+	"dir": true, "cd": true, "type": true, "copy": true, "move": true,
+	"del": true, "ren": true, "md": true, "rd": true, "echo": true,
+	"set": true, "cls": true, "findstr": true, "where": true, "ver": true,
+	"for": true, "if": true, "goto": true, "call": true, "start": true,
+	"tasklist": true, "taskkill": true, "fc": true, "mklink": true,
+	"icacls": true, "timeout": true, "chcp": true, "title": true,
+	"assoc": true, "ftype": true, "more": true, "sort": true, "find": true,
+}
+
+// precheckWindowsCommand returns a suggestion and true when the command's
+// first token is a known Unix-only tool that cmd.exe cannot run.
+func precheckWindowsCommand(command string) (string, bool) {
+	token := strings.ToLower(firstCommandToken(command))
+	if token == "" || windowsNativeCommands[token] {
+		return "", false
+	}
+	hint, ok := windowsAlias[token]
+	if !ok {
+		return "", false
+	}
+	return hint, true
+}
+
+// firstCommandToken extracts the first whitespace-delimited token of a
+// command, stripping surrounding quotes (e.g. `"ls" -la` → ls).
+func firstCommandToken(command string) string {
+	trimmed := strings.TrimSpace(command)
+	if trimmed == "" {
+		return ""
+	}
+	end := strings.IndexAny(trimmed, " \t\r\n")
+	if end < 0 {
+		end = len(trimmed)
+	}
+	return strings.Trim(trimmed[:end], `"'`)
+}
+
+// maybeAppendWindowsHint appends a candidate suggestion when a cmd.exe run
+// failed with a not-recognized error or used a known Unix-only command.
+func maybeAppendWindowsHint(shell, command, output string) string {
+	if shell != "cmd" {
+		return output
+	}
+	low := strings.ToLower(output)
+	notRecognized := strings.Contains(low, "不是内部或外部命令") ||
+		strings.Contains(low, "is not recognized as an internal or external command")
+	if !notRecognized {
+		return output
+	}
+	token := strings.ToLower(firstCommandToken(command))
+	if hint, ok := windowsAlias[token]; ok {
+		return output + "\n提示：cmd.exe 不识别 " + token + "，建议改用 " + hint
+	}
+	if token != "" {
+		return output + "\n提示：命令 " + token + " 不存在或不在 PATH 中，可用 where " + token + " 检查；如需 Unix 等价命令可对照 findstr/type/dir 等内置命令"
+	}
+	return output
+}
+
+// runWithTreeKill starts cmd, waits for completion or the context deadline,
+// and on deadline kills the whole process tree on Windows (cmd.exe spawns
+// children such as ping that outlive the root process and keep output pipes
+// open; taskkill /T /F reaps them so the call returns promptly).
+func runWithTreeKill(cmd *exec.Cmd, ctx context.Context) ([]byte, error) {
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- cmd.Wait() }()
+	select {
+	case err := <-waitCh:
+		return buf.Bytes(), err
+	case <-ctx.Done():
+		if cmd.Process != nil {
+			killProcessTree(cmd.Process.Pid)
+		}
+		err := <-waitCh
+		return buf.Bytes(), err
+	}
+}
+
+// killProcessTree terminates pid and all its descendants. No-op off Windows.
+func killProcessTree(pid int) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	// Ignore errors: the root may already be dead; taskkill reaps the rest.
+	_ = exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
+}
