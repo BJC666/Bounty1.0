@@ -122,18 +122,35 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 	builtin.RegisterDeVET(reg, devetBackend)
 	reg.Add(builtin.NewRepoMapTool(repoMapMgr))
 
-	// 5b. Connect MCP plugins
+	// 5b. Connect MCP plugins (bounty.toml [plugins]) and JSON config files
+	// (user-level bounty-data/mcp.json + project-level .bounty/mcp.json).
 	mcpHost := mcp.NewHost()
 	for _, p := range cfg.Plugins {
 		spec := mcp.Spec{
-			Name:    p.Name,
-			Command: p.Command,
-			Args:    p.Args,
-			Env:     p.Env,
+			Name:     p.Name,
+			Command:  p.Command,
+			Args:     p.Args,
+			Env:      p.Env,
+			URL:      p.URL,
+			ReadOnly: p.ReadOnly,
+			Trust:    p.Trust,
 		}
 		if err := mcpHost.Connect(spec); err != nil {
 			// Log warning but continue — MCP servers are optional
 			fmt.Fprintf(os.Stderr, "Warning: MCP server %q: %v\n", p.Name, err)
+		}
+	}
+	ws := cfg.Sandbox.WorkspaceRoot
+	jsonSpecs, err := mcp.LoadSpecs(
+		filepath.Join(ws, "bounty-data", "mcp.json"),
+		filepath.Join(ws, ".bounty", "mcp.json"),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: MCP config files: %v\n", err)
+	}
+	for _, spec := range jsonSpecs {
+		if err := mcpHost.Connect(spec); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: MCP server %q: %v\n", spec.Name, err)
 		}
 	}
 	mcpHost.RegisterTools(reg)

@@ -83,6 +83,7 @@ def parse_transcript(text):
     cache_hits = 0
     tool_calls = 0
     tool_errors = []
+    tools_used = []
     turns_complete = 0
     final_err = None
     first_error_step = None
@@ -101,6 +102,8 @@ def parse_transcript(text):
                 cache_hits += 1
         elif t == "tool_call":
             tool_calls += 1
+            if ev.get("tool_name"):
+                tools_used.append(ev.get("tool_name"))
         elif t == "tool_result":
             if ev.get("tool_err"):
                 tool_errors.append({
@@ -123,6 +126,7 @@ def parse_transcript(text):
         "cache_hit_events": cache_hits,
         "tool_calls": tool_calls,
         "tool_errors": tool_errors,
+        "tools_used": tools_used,
         "n_tool_errors": len(tool_errors),
         "first_error_step": first_error_step,
         "turns_complete": turns_complete,

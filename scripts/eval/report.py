@@ -15,7 +15,7 @@ from pathlib import Path
 EVAL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EVAL_DIR.parents[1]
 
-CATEGORY_NAMES = {"A": "仓库理解", "B": "多文件改动", "C": "修 bug"}
+CATEGORY_NAMES = {"A": "仓库理解", "B": "多文件改动", "C": "修 bug", "E": "MCP 工具"}
 
 
 def collect(run_dirs):
@@ -95,7 +95,7 @@ def build_report(run_id, models):
         add("")
         add("| 任务 | 类别 | 判定 | 步数 | 输入 tok | 输出 tok | 工具失败 | 用时(s) | 原因/备注 |")
         add("|---|---|---|---|---|---|---|---|---|")
-        for cat in ("A", "B", "C"):
+        for cat in ("A", "B", "C", "E"):
             for r in sorted(cats.get(cat, []), key=lambda x: x["task_id"]):
                 mark = "通过" if r["verdict"] else "失败"
                 reason = (r.get("reason") or "")[:80].replace("|", "/")
@@ -108,7 +108,7 @@ def build_report(run_id, models):
     add("")
     found = False
     for model in sorted(models):
-        for cat in ("A", "B", "C"):
+        for cat in ("A", "B", "C", "E"):
             for r in sorted(models[model].get(cat, []), key=lambda x: x["task_id"]):
                 if r.get("verdict"):
                     continue

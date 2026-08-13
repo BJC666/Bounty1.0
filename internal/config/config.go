@@ -3,16 +3,16 @@ package config
 import "fmt"
 
 type Config struct {
-	Version      int              `toml:"config_version"`
-	DefaultModel string           `toml:"default_model"`
-	Language     string           `toml:"language"`
-	Providers    []ProviderConfig `toml:"providers"`
-	Agent        AgentConfig      `toml:"agent"`
-	Sandbox      SandboxConfig    `toml:"sandbox"`
-	Skills       SkillsConfig     `toml:"skills"`
-	Plugins      []PluginEntry    `toml:"plugins"`
+	Version      int               `toml:"config_version"`
+	DefaultModel string            `toml:"default_model"`
+	Language     string            `toml:"language"`
+	Providers    []ProviderConfig  `toml:"providers"`
+	Agent        AgentConfig       `toml:"agent"`
+	Sandbox      SandboxConfig     `toml:"sandbox"`
+	Skills       SkillsConfig      `toml:"skills"`
+	Plugins      []PluginEntry     `toml:"plugins"`
 	Permissions  PermissionsConfig `toml:"permissions"`
-	Hooks        HooksConfig      `toml:"hooks"`
+	Hooks        HooksConfig       `toml:"hooks"`
 }
 
 type ProviderConfig struct {
@@ -55,10 +55,13 @@ type SkillsConfig struct {
 }
 
 type PluginEntry struct {
-	Name    string   `toml:"name"`
-	Command string   `toml:"command"`
-	Args    []string `toml:"args"`
-	Env     []string `toml:"env"`
+	Name     string   `toml:"name"`
+	Command  string   `toml:"command"`
+	Args     []string `toml:"args"`
+	Env      []string `toml:"env"`
+	URL      string   `toml:"url"`
+	ReadOnly bool     `toml:"read_only"`
+	Trust    bool     `toml:"trust"`
 }
 
 type PermissionsConfig struct {

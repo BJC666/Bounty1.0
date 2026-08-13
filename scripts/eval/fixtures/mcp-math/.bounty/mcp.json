@@ -1,0 +1,10 @@
+{
+  "servers": [
+    {
+      "name": "math",
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "read_only": true
+    }
+  ]
+}

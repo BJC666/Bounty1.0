@@ -652,6 +652,30 @@
       "check": null,
       "forbidden_files": [],
       "max_diff_lines": null
+    },
+    {
+      "id": "E1",
+      "category": "E",
+      "fixture": "mcp-math",
+      "title": "MCP 加法工具",
+      "prompt": "项目配置了名为 math 的 MCP 服务器，提供 add 与 calc_fib 两个工具。请调用 MCP 工具计算 21+21 和 40+2，把两个结果用顿号连接后输出（如 42、42）。不要自己心算。",
+      "critical_patterns": [
+        "42、42"
+      ],
+      "any_of": [],
+      "golden_answer": "42、42"
+    },
+    {
+      "id": "E2",
+      "category": "E",
+      "fixture": "mcp-math",
+      "title": "MCP 斐波那契工具",
+      "prompt": "调用项目 MCP 服务器 math 的 calc_fib 工具计算斐波那契第 10 项（F(0)=0），只输出这个数字。",
+      "critical_patterns": [
+        "55"
+      ],
+      "any_of": [],
+      "golden_answer": "55"
     }
   ]
 }

@@ -215,6 +215,19 @@ def judge_one(task, task_dir):
                 "changed_files": compare_dirs(pristine, src),
                 "forbidden_hits": [], "diff_lines": None}
 
+    if task["category"] == "E":
+        ok, reason = judge_a(task, run)
+        used = run.get("tools_used") or []
+        mcp_used = any(n.startswith("mcp__math__") for n in used)
+        if not ok or not mcp_used:
+            return {**base(run), "verdict": False,
+                    "reason": f"文本命中={ok}（{reason}）；MCP 工具实际使用={mcp_used}；工具列表={used[:8]}",
+                    "check_rc": None, "check_output_tail": "",
+                    "changed_files": [], "forbidden_hits": [], "diff_lines": None}
+        return {**base(run), "verdict": True, "reason": reason + "；MCP 工具已实际调用",
+                "check_rc": None, "check_output_tail": "",
+                "changed_files": [], "forbidden_hits": [], "diff_lines": None}
+
     ok, reason, rc, out, changed, fh, dl = judge_bc(task, run, src, pristine)
     return {**base(run), "verdict": ok, "reason": reason,
             "check_rc": rc, "check_output_tail": out,
@@ -233,6 +246,7 @@ def base(run):
         "output_tokens": run.get("output_tokens"),
         "tool_calls": run.get("tool_calls"),
         "n_tool_errors": run.get("n_tool_errors"),
+        "tools_used": run.get("tools_used"),
         "first_error_step": run.get("first_error_step"),
         "wall_seconds": run.get("wall_seconds"),
         "timeout": run.get("timeout"),

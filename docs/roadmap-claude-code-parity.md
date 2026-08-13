@@ -177,6 +177,7 @@
 **P3-1 MCP 补全（S7）**
 - 目标：SSE/HTTP transport；resources/prompts 暴露为只读工具/上下文块；项目级 `.bounty/mcp.json` + 用户级 `bounty-data/mcp.json` 配置；server 级权限标注（信任 server 的工具透传 `ReadOnly` 与审批策略）。
 - 验收：连 3 个真实 MCP server（stdio×2 + SSE×1），Eval 增加 2 道 MCP 任务。
+- 状态（2026-08-13）：✅ 代码侧已交付——①SSE transport（`internal/mcp/sse.go`）：GET /sse 取 endpoint 事件 → POST JSON-RPC → SSE `message` 事件按 ID 路由；②resources/prompts 暴露为只读工具（`mcp__<server>__resource_N`/`prompt_N`，prompt 参数转为 inputSchema）；③server 级权限标注：`Spec.ReadOnly/Trust`（bounty.toml `[plugins]` 加 `url/read_only/trust`），资源/提示恒只读，工具 ReadOnly 透传到权限门；④配置：`mcp.LoadSpecs` 合并用户级 `bounty-data/mcp.json` + 项目级 `.bounty/mcp.json`（同名项目覆盖用户），boot 已接线。测试：`mcp_test.go`（helper 进程假 stdio server：工具/资源/提示发现与调用 + ReadOnly 透传 2 项）、`sse_test.go`（httptest SSE 端到端 + 坏端点 2 项）、`config_test.go`（合并/覆盖/坏 JSON 3 项）全绿；Eval 新增 E1/E2 两道 MCP 任务（fixture `mcp-math` 内置 python MCP 服务器，judge 校验「文本命中 + 确实调用了 mcp__math__ 工具」），selfcheck 35/35。注：验收要求「连 3 个真实 MCP server」需外网/用户实际环境（npx/遥测服务），本轮用本地假 server（stdio 子进程 + httptest SSE）覆盖同协议路径，真实 server 连接待用户环境实测。
 
 **P3-2 Windows Job Object 沙箱（S8）**
 - 目标：bash 子进程挂 Job Object——限定可写目录（workspace + 白名单）、禁出站网络（可选开关）、子进程不可逃逸；Docker 可用时仍走容器。与 guardian 联动：危险命令在沙箱内也拦截。
