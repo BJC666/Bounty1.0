@@ -225,13 +225,11 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		filepath.Join(dataDir(), "agents"),
 	}...))
 
-	// 8. Build system prompt (repo map appended separately so the agent can
-	// refresh it per turn without rebuilding the static base).
-	basePrompt := buildSystemPrompt(cfg, modelName, memDocs, skillStore.Index(), cmdStore)
-	systemPrompt := basePrompt
-	if block := repoMapMgr.Render(); block != "" {
-		systemPrompt = basePrompt + block
-	}
+	// 8. Build system prompt. The repo map is NOT part of it (P8-3): the
+	// agent injects the map + todo list into the first user message so the
+	// system prompt stays byte-stable and provider prefix caching survives
+	// mid-task map refreshes.
+	systemPrompt := buildSystemPrompt(cfg, modelName, memDocs, skillStore.Index(), cmdStore)
 
 	if opts.Posture == permission.PosturePlan {
 		systemPrompt += planContractText()
@@ -617,13 +615,16 @@ func dataDir() string {
 // persona, workspace root, project memory documents, and available skills.
 func buildSystemPrompt(cfg *config.Config, modelName string, docs []memory.Doc, skills []skill.IndexEntry, cmdStore *plugin.CommandStore) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("You are Bounty, a general-purpose AI agent running on **%s**. You help users with software engineering, research, data analysis, and automation tasks. If asked which model or provider you are using, answer with: %s\n", modelName, modelName))
+	sb.WriteString(fmt.Sprintf("You are Bounty, a general-purpose AI agent running on **%s** (software engineering, research, data analysis, automation). If asked which model you are using, answer with: %s\n", modelName, modelName))
 	sb.WriteString("\n## Tool Usage Rules\n")
-	sb.WriteString("- Answer greetings/simple questions directly WITHOUT tools; use tools only for file access, code search, web, shell.\n")
-	sb.WriteString("- Locate files with `glob` before reading/editing unless the path is certain (guessing paths wastes turns).\n")
-	sb.WriteString("- `memory_search` retrieves facts saved by `remember`; prefer it over guessing past agreements.\n")
+	sb.WriteString("- Greetings/simple questions: answer directly, no tools.\n")
+	sb.WriteString("- The Repo Map (first user message) lists files+symbols; if it shows the target, read it directly (`[function]FormatList` → `read_file internal/format/format.go`) and answer — no glob/grep repeats.\n")
+	sb.WriteString("- Glob to locate unknown paths; after one successful glob, read directly (no glob+grep repeats).\n")
+	sb.WriteString("- Don't re-read known content; answer conclusion-first, don't echo tool output.\n")
+	sb.WriteString("- Fix tasks: run the targeted test after editing; deliver when it passes (full suite not needed).\n")
+	sb.WriteString("- `memory_search` reads facts saved by `remember`; prefer it over guessing.\n")
 	sb.WriteString("\n## DeVET Security Tools\n")
-	sb.WriteString("DeVET delegation-verification tools: `devet_health` (status), `devet_build_scenario` (build chain), `devet_verify_chain` (7 recursive checks), `devet_list_attacks` (8 attack types), `devet_simulate_attack` (attack + blame). For DeVET/delegation questions use devet_* directly; do NOT web-search them.\n\n")
+	sb.WriteString("DeVET delegation tools: `devet_health`, `devet_build_scenario`, `devet_verify_chain` (7 checks), `devet_list_attacks`, `devet_simulate_attack`. For delegation questions use devet_* directly; don't web-search them.\n\n")
 
 	// Environment info (cached — stable across turns)
 	sb.WriteString(environment.Probe().Block())

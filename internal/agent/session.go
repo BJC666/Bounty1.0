@@ -53,6 +53,17 @@ func (s *Session) Snapshot() []provider.Message {
 	return result
 }
 
+// UpdateMessage atomically replaces the message at index. Out-of-range
+// indices are a no-op. Used by the agent to rewrite the first user message
+// with fresh dynamic blocks (P8-3) while keeping the system prompt stable.
+func (s *Session) UpdateMessage(index int, msg provider.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if index >= 0 && index < len(s.Messages) {
+		s.Messages[index] = msg
+	}
+}
+
 // Truncate cuts the message list back to index, preserving the system message.
 // If index is out of bounds the call is a no-op.
 func (s *Session) Truncate(index int) {

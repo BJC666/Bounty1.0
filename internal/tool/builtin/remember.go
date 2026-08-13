@@ -18,10 +18,10 @@ func (r *RememberTool) Name() string      { return "remember" }
 func (r *RememberTool) ReadOnly() bool    { return false }
 func (r *RememberTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (r *RememberTool) Description() string {
-	return "Save a durable fact to project memory (conventions, preferences, lessons)."
+	return "Save a durable fact to project memory."
 }
 func (r *RememberTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","description":"Short kebab-case name for this memory"},"description":{"type":"string","description":"One-line summary"},"content":{"type":"string","description":"The fact to remember"}},"required":["name","description","content"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","description":"Kebab-case name"},"description":{"type":"string","description":"One-line summary"},"content":{"type":"string"}},"required":["name","description","content"]}`)
 }
 
 func (r *RememberTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {

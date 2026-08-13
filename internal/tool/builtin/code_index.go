@@ -22,7 +22,7 @@ func (CodeIndexTool) Description() string {
 	return "Index code symbols (functions/types/methods) in a file or directory."
 }
 func (CodeIndexTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"path":{"type":"string","description":"File or dir"},"query":{"type":"string","description":"Filter by name (substring)"},"kind":{"type":"string","enum":["function","type","method","all"],"description":"Symbol kind"}},"required":["path"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"},"query":{"type":"string","description":"Filter by name"},"kind":{"type":"string","enum":["function","type","method","all"]}},"required":["path"]}`)
 }
 
 func (CodeIndexTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {

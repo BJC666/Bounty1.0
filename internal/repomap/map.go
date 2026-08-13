@@ -2,6 +2,7 @@ package repomap
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,14 +40,58 @@ type Manager struct {
 	root        string
 	maxFiles    int
 	maxRunes    int
+	boost       map[string]int // relative path -> priority (lower = earlier), P8-2
 	fingerprint string
 	rendered    string
 	built       bool
 }
 
-// NewManager creates a repo-map manager for root.
+// NewManager creates a repo-map manager for root. When the workspace ships
+// a `.bounty/repomap-boost.json` file listing `order`, the listed files are
+// rendered first (P8-2: usage-ranked maps learned from eval hit statistics).
 func NewManager(root string) *Manager {
-	return &Manager{root: root, maxFiles: DefaultMaxFiles, maxRunes: DefaultMaxRunes}
+	m := &Manager{root: root, maxFiles: DefaultMaxFiles, maxRunes: DefaultMaxRunes}
+	m.loadBoost()
+	return m
+}
+
+// boostFile is the on-disk shape of `.bounty/repomap-boost.json`.
+type boostFile struct {
+	Order []string `json:"order"`
+}
+
+// loadBoost reads the optional boost file; failures are ignored (best-effort).
+func (m *Manager) loadBoost() {
+	data, err := os.ReadFile(filepath.Join(m.root, ".bounty", "repomap-boost.json"))
+	if err != nil {
+		return
+	}
+	var bf boostFile
+	if json.Unmarshal(data, &bf) != nil || len(bf.Order) == 0 {
+		return
+	}
+	m.boost = map[string]int{}
+	for i, p := range bf.Order {
+		m.boost[filepath.ToSlash(strings.TrimPrefix(filepath.Clean(p), "./"))] = i
+	}
+}
+
+// SetBoost overrides the boost ordering programmatically. Paths are
+// root-relative slash paths; anything not listed keeps alphabetical order.
+func (m *Manager) SetBoost(paths []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.boost = nil
+	if len(paths) == 0 {
+		return
+	}
+	m.boost = map[string]int{}
+	for i, p := range paths {
+		m.boost[filepath.ToSlash(strings.TrimPrefix(filepath.Clean(p), "./"))] = i
+	}
+	m.fingerprint = ""
+	m.rendered = ""
+	m.built = false
 }
 
 // Render returns the current repo map block, building it on first use.
@@ -84,19 +129,19 @@ func (m *Manager) ForceRender() string {
 }
 
 func (m *Manager) rebuildLocked() {
-	files := collectFiles(m.root, m.maxFiles)
+	files := m.orderFiles(collectFiles(m.root, m.maxFiles))
 	module := modulePath(filepath.Join(m.root, "go.mod"))
 	topDirs := topDirNames(files)
 	nodes := make([]FileNode, 0, len(files))
 	totalSymbols := 0
 	for _, p := range files {
-		syms := IndexFile(p, "all", MaxSymbolsFile)
+		syms := dedupeSymbols(IndexFile(p, "all", MaxSymbolsFile))
 		totalSymbols += len(syms)
 		deps := internalDeps(p, module, topDirs, MaxDepsFile)
 		rel, _ := filepath.Rel(m.root, p)
 		nodes = append(nodes, FileNode{Path: filepath.ToSlash(rel), Symbols: syms, Deps: deps})
 	}
-	m.rendered = renderBlock(nodes, totalSymbols, m.maxRunes)
+	m.rendered = renderBlock(nodes, m.maxRunes)
 	m.built = true
 }
 
@@ -122,6 +167,60 @@ func collectFiles(root string, maxFiles int) []string {
 	if maxFiles > 0 && len(files) > maxFiles {
 		files = files[:maxFiles]
 	}
+	return files
+}
+
+// orderFiles sorts indexed files: boosted paths first (by priority), then
+// the remaining files alphabetically. Boost keys are matched after cleaning
+// so `./src/x.go` and `src/x.go` both hit.
+func (m *Manager) orderFiles(files []string) []string {
+	if len(m.boost) == 0 {
+		return files
+	}
+	rel := func(p string) string {
+		r, err := filepath.Rel(m.root, p)
+		if err != nil {
+			return filepath.ToSlash(p)
+		}
+		return filepath.ToSlash(r)
+	}
+	sort.SliceStable(files, func(i, j int) bool {
+		ri, rj := rel(files[i]), rel(files[j])
+		bi, oki := m.boost[ri]
+		bj, okj := m.boost[rj]
+		switch {
+		case oki && okj:
+			return bi < bj
+		case oki:
+			return true
+		case okj:
+			return false
+		default:
+			return ri < rj
+		}
+	})
+	// P8-3: group files under one directory header without losing the boost
+	// priority — dirs are ordered by the boost rank of their first file, and
+	// the file order inside each dir stays boost-ranked (stable sort).
+	dirRank := map[string]int{}
+	for _, p := range files {
+		d := pathDir(rel(p))
+		r, ok := m.boost[rel(p)]
+		if !ok {
+			r = 1 << 30
+		}
+		if cur, seen := dirRank[d]; !seen || r < cur {
+			dirRank[d] = r
+		}
+	}
+	sort.SliceStable(files, func(i, j int) bool {
+		di, dj := pathDir(rel(files[i])), pathDir(rel(files[j]))
+		ri, rj := dirRank[di], dirRank[dj]
+		if ri != rj {
+			return ri < rj
+		}
+		return di < dj
+	})
 	return files
 }
 
@@ -268,14 +367,52 @@ func firstSegment(dep string) string {
 	return dep
 }
 
+// symbolKindRank orders kinds for deterministic rendering: at the same line
+// (same name), the preferred kind wins and the duplicate is dropped. This
+// removes function+method pairs emitted for Go receivers and TS annotated
+// functions (P8-3 map slimming, no information loss).
+var symbolKindRank = map[string]int{"type": 0, "method": 1, "function": 2, "": 3}
+
+// dedupeSymbols sorts symbols by (line, kind rank, name) and drops entries
+// that duplicate an already-seen (name, line).
+func dedupeSymbols(syms []Symbol) []Symbol {
+	if len(syms) < 2 {
+		return syms
+	}
+	sorted := append([]Symbol(nil), syms...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Line != sorted[j].Line {
+			return sorted[i].Line < sorted[j].Line
+		}
+		ri, rj := symbolKindRank[sorted[i].Kind], symbolKindRank[sorted[j].Kind]
+		if ri != rj {
+			return ri < rj
+		}
+		return sorted[i].Name < sorted[j].Name
+	})
+	seen := map[string]bool{}
+	out := sorted[:0]
+	for _, s := range sorted {
+		key := s.Name + ":" + fmt.Sprint(s.Line)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, s)
+	}
+	return out
+}
+
 // renderBlock formats the repo map, truncating to maxRunes.
-func renderBlock(nodes []FileNode, totalSymbols, maxRunes int) string {
+func renderBlock(nodes []FileNode, maxRunes int) string {
 	if len(nodes) == 0 {
 		return ""
 	}
+	// P8-3 map slimming: orderFiles already groups directories by boost
+	// priority; renderBlock only collapses repeated headers (repeated
+	// headers wasted ~10% of the block) and drops the stats comment.
 	var sb strings.Builder
 	sb.WriteString("\n## Repo Map\n")
-	sb.WriteString(fmt.Sprintf("<!-- f=%d s=%d -->\n", len(nodes), totalSymbols))
 	prevDir := ""
 	for _, n := range nodes {
 		dir := pathDir(n.Path)
@@ -284,8 +421,9 @@ func renderBlock(nodes []FileNode, totalSymbols, maxRunes int) string {
 			sb.WriteString(fmt.Sprintf("\n## %s/\n", dir))
 		}
 		base := filepath.Base(n.Path)
-		sb.WriteString(fmt.Sprintf("- %s(%d)\n", base, len(n.Symbols)))
-		for _, s := range n.Symbols {
+		syms := dedupeSymbols(n.Symbols)
+		sb.WriteString(fmt.Sprintf("- %s(%d)\n", base, len(syms)))
+		for _, s := range syms {
 			sb.WriteString(fmt.Sprintf("  [%s]%s L%d\n", s.Kind, s.Name, s.Line))
 		}
 		if len(n.Deps) > 0 {

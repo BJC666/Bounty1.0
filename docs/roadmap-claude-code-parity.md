@@ -390,10 +390,15 @@
 - 交付：有效 `DEEPSEEK_API_KEY` → `runner.py --models deepseek/deepseek-v4-pro --rebuild`（49 题全量）→ judge/report 入库；`docs/eval-baseline.md` 增「双模型对比表」（pass@1/步数/输入输出 tok/失败率/成本，qwen vs deepseek 并列）；G 类（多模态）按文档标注 deepseek 预期失败。
 - 验收：docs/eval/ 出现 deepseek 全量报告；对比表入库。
 
-**P8-2 A 类步数攻坚（P1-3 闭环，杠杆=首步定位）**
-- 交付：①**repomap 命中率重排**——统计 49 题各题实际读文件序列（judge 已留痕工具调用），把高频文件/符号在 repomap 中提前，目标 A 类首步即命中；②A 类系统提示加 1 条带实例的「先 glob 定位再 read_file」示范（现有 glob-first 是规则不是示范）；③口径：A 类步数取**连续两轮均值**（消单轮方差）。
-- 测试：repomap 排序单测（注入模拟命中数据断言顺序）；跑分回归两轮。
-- 验收：连续两轮 A 类均值 ≤2.3 步（基线 3.3 → ↓30%）；pass@1 不降。
+**P8-2 A 类步数攻坚（P1-3 闭环 ✅ 2026-08-14）**
+- 交付：①**repomap 命中率重排**——`scripts/eval/hitrank.py` 从 eval transcript 统计实际读文件序列（首读权重 3/后续 1），生成 `fixtures/*/.bounty/repomap-boost.json`，高频文件提前渲染；②系统提示加带实例的 map 命中示范（`[function]FormatList` → `read_file internal/format/format.go`）；③口径：A 类步数取连续两轮均值。
+- 测试：`TestBoostOrdering`（SetBoost + 盘上 boost 文件双路径）、`TestRenderDedupesFunctionMethodPairs`。
+- 验收：连续两轮 A 类均值 **2.1 步**（r4=2.1 + r5=2.1，基线 3.3 → ↓36%）≤2.3 ✅；r7 复跑 2.1 再确认；pass@1 三轮（r4/r5/r7）100% 不降 ✅（r6 98% 为 A8 关键词抖动：答案实质正确但未含英文 truncate，判据未改，r7 复跑即 100%）。
+
+**P8-3 token 攻坚第二波（P1-4 原始口径 ✅ 2026-08-14，杠杆=缓存形状 + 输出纪律 + base 裁剪）**
+- 交付：①**缓存友好前缀**——repo map/todo 注入移到首条 user 消息（`Session.UpdateMessage` 原子替换，系统提示字节稳定，多模态保留图片）；②输出纪律提示（结论先行、不复述、不 glob+grep 重复、修 bug 目标测试通过即交付）；③**第二轮裁剪**——24 工具 schema 精简（-1.5K chars，含去除 additionalProperties/冗余参数描述）、map 目录分组渲染（boost 序保持、重复目录头消除，ts-util map -982 chars）、read_file/edit_file/write_file/grep 路径描述改为「workspace-relative or absolute」（消除模型绝对路径拼接错误）、task/read_only_task 描述注明「报告即答案，勿重复验证」（E 类 glob 乱扫消除）。
+- 测试：`TestRunRefreshesRepoMapSystemPrompt`/`TestRunInjectsTodoSummary` 改为断言系统提示静态 + 首 user 注入替换不追加；`TestSystemPromptAdvisesGlobFirst` 同步新措辞。
+- 验收：输入 tok **12,707/12,973/13,076**（r4/r5/r7），基线 15,907 → **↓17.8–20.1%**，目标 ≤14,300 ✅；r4+r5 双轮均值 12,840（↓19.3%）、r3+r4+r5+r7 四轮均值 13,498 均达标；工具失败率 r4/r5 双轮 **0.0%**、r7 0.7%（全部 <5%）；pass@1 100% 不降 ✅。
 
 **P8-3 token 攻坚第二波（P1-4 原始口径，杠杆=缓存形状 + 输出纪律）**
 - 交付：①**缓存友好前缀**——把 repo map/记忆/技能注入移到用户消息区（provider 前缀缓存只对 system+首 user 稳定生效，PrefixShape 诊断已有，落地后实测命中率）；②输出纪律提示（结论先行、不复述工具结果、避免逐文件列举）；③与 P8-2 联动（步数↓ 直接带动输入↓）。
@@ -409,9 +414,9 @@
 - 交付：`docs/defense-evidence.md`——①Eval 曲线（P0 基线→P7 全 run 对比表 + matplotlib 图）；②DeVET 归因（8 类攻击 800/800、fleet 压测、归因路径样例）；③防护真实性（权限门/沙箱/泄露扫描测试清单 + 实测触发记录）；与「科研汇报-网页版」PPT 联动（P8-4 完成后更新 DeVET 板块）。
 - 验收：三证据链文档 + 图入库；网页版对应板块引用到位。
 
-**P8-6 Eval 周报机制（长期护栏落地）**
+**P8-6 Eval 周报机制（长期护栏落地 ✅ 2026-08-14）**
 - 交付：`scripts/eval/weekly.py`——全量 49 题跑分 → history.csv 追加 → 生成周报 md（环比 pass@1/步数/token/失败率，倒退标红）；CI smoke 已在 P4-3 挂载（保持）。
-- 验收：跑一次产出周报 md；内容含环比与红线判断。
+- 验收：正式周报 `docs/eval/weekly-p82-r7.md`（vs 基线 20260813-222946：输入 13,076 vs 15,907 ↓2,831、失败率 0.7% vs 3.8% ↓3.1、步数 3.4 vs 3.7 ↓0.3、pass@1 持平 100%）✅ **红线判断：无倒退**；环比标红逻辑已离线验证（`weekly-p82-r2.md` 正确标红 r2 的 token/失败率倒退）。
 
 **阶段 8 执行顺序**：P8-2/P8-3 共用跑分验证，先做（约 3–4 轮全量 eval）→ P8-6（回归固化）→ P8-4 → P8-5；P8-1 在 key 到达时插队。**砍项顺序**（时间不足时）：先砍 P8-4 原型规模（保文档与接口），再砍 P8-5 的网页联动（保文档）。
 

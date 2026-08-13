@@ -15,9 +15,9 @@ type WriteFileTool struct{}
 func (WriteFileTool) Name() string        { return "write_file" }
 func (WriteFileTool) ReadOnly() bool      { return false }
 func (WriteFileTool) Owner() tool.Owner   { return tool.Owner{Kind: "core", ID: "builtin"} }
-func (WriteFileTool) Description() string { return "Creates or overwrites a file at the specified path." }
+func (WriteFileTool) Description() string { return "Create or overwrite a file." }
 func (WriteFileTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","maxLength":1024,"description":"Absolute file path"},"content":{"type":"string","maxLength":1048576,"description":"Content to write"},"overwrite":{"type":"boolean","description":"Set true to overwrite existing file"}},"required":["file_path","content"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","maxLength":1024,"description":"Path (workspace-relative or absolute)"},"content":{"type":"string"},"overwrite":{"type":"boolean","description":"Overwrite if exists"}},"required":["file_path","content"]}`)
 }
 func (WriteFileTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {

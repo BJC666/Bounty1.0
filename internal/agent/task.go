@@ -46,11 +46,11 @@ func (t *TaskTool) Name() string   { return "task" }
 func (t *TaskTool) ReadOnly() bool { return false }
 
 func (t *TaskTool) Description() string {
-	return "Launch a sub-agent to handle a complex task. role=explore runs read-only investigation returning a structured 结论/证据/文件清单 report; role=general may write to write_paths. model optionally switches the sub-agent to another configured model. Returns a structured summary."
+	return "Launch a sub-agent. role=explore = read-only investigation with structured report (use its report as the answer, don't re-verify); role=general may write to write_paths; model overrides the sub-agent model."
 }
 
 func (t *TaskTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"task":{"type":"string","description":"The task for the sub-agent to perform"},"role":{"type":"string","enum":["general","explore"],"description":"Sub-agent role: general (default, may write to write_paths) or explore (read-only investigation with structured report)"},"model":{"type":"string","description":"Optional model override for the sub-agent (provider/model or bare model name)"},"write_paths":{"type":"array","items":{"type":"string"},"description":"Paths the sub-agent may write to"}},"required":["task"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"task":{"type":"string","description":"Task to perform"},"role":{"type":"string","enum":["general","explore"],"description":"general (writes to write_paths) or explore (read-only)"},"model":{"type":"string","description":"Sub-agent model override"},"write_paths":{"type":"array","items":{"type":"string"}}},"required":["task"]}`)
 }
 
 func (t *TaskTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
@@ -102,11 +102,11 @@ func (t *ReadOnlyTaskTool) Name() string   { return "read_only_task" }
 func (t *ReadOnlyTaskTool) ReadOnly() bool { return true }
 
 func (t *ReadOnlyTaskTool) Description() string {
-	return "Launch a read-only sub-agent for research. Cannot modify files."
+	return "Launch a read-only research sub-agent (cannot modify files); use its report as the answer, don't re-verify."
 }
 
 func (t *ReadOnlyTaskTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"task":{"type":"string","description":"The research task for the sub-agent"}},"required":["task"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"task":{"type":"string","description":"Research task"}},"required":["task"]}`)
 }
 
 func (t *ReadOnlyTaskTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {

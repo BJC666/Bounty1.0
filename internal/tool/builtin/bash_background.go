@@ -211,10 +211,10 @@ func (b *BashOutputTool) Name() string      { return "bash_output" }
 func (b *BashOutputTool) ReadOnly() bool    { return true }
 func (b *BashOutputTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (b *BashOutputTool) Description() string {
-	return "Poll a background bash job: status (running/done), exit code, output tail."
+	return "Poll a background bash job (status/exit/output tail)."
 }
 func (b *BashOutputTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"job_id":{"type":"string","maxLength":64,"description":"Job id (e.g. bg-1)"},"tail":{"type":"number","minimum":100,"maximum":16000,"description":"Max chars (default 8000)"}},"required":["job_id"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"job_id":{"type":"string","maxLength":64,"description":"Job id"},"tail":{"type":"number","minimum":100,"maximum":16000,"description":"Max chars (default 8000)"}},"required":["job_id"]}`)
 }
 func (b *BashOutputTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	if b.Store == nil {
@@ -249,10 +249,10 @@ func (b *BashKillTool) Name() string      { return "bash_kill" }
 func (b *BashKillTool) ReadOnly() bool    { return false }
 func (b *BashKillTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (b *BashKillTool) Description() string {
-	return "Terminate a running background bash job by job id."
+	return "Stop a background bash job by id."
 }
 func (b *BashKillTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"job_id":{"type":"string","maxLength":64,"description":"Job id returned by bash (e.g. bg-1)"}},"required":["job_id"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"job_id":{"type":"string","maxLength":64,"description":"Job id (e.g. bg-1)"}},"required":["job_id"]}`)
 }
 func (b *BashKillTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	if b.Store == nil {

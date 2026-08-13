@@ -139,3 +139,62 @@ func TestIndexFileCap(t *testing.T) {
 		t.Fatalf("cap failed: %d", len(syms))
 	}
 }
+
+// P8-2: boosted files must be rendered before un-boosted ones, in priority
+// order (usage-ranked repo maps). Both SetBoost and the on-disk boost file
+// are covered.
+func TestBoostOrdering(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example.com/repo\n\ngo 1.22\n")
+	write(t, root, "internal/store/store.go", "package store\n\ntype Store struct{}\n")
+	write(t, root, "internal/format/format.go", "package format\n\nfunc FormatList() {}\n")
+	write(t, root, "main.go", "package main\n\nfunc main() {}\n")
+
+	// 1. Programmatic boost: hot files first.
+	m := NewManager(root)
+	m.SetBoost([]string{"internal/format/format.go", "internal/store/store.go"})
+	block := m.Render()
+	idxFormat := strings.Index(block, "format.go")
+	idxStore := strings.Index(block, "store.go")
+	idxMain := strings.Index(block, "main.go")
+	if idxFormat < 0 || idxStore < 0 || idxMain < 0 {
+		t.Fatalf("missing entries:\n%s", block)
+	}
+	if !(idxFormat < idxStore && idxStore < idxMain) {
+		t.Errorf("boost order violated (want format < store < main):\n%s", block)
+	}
+
+	// 2. On-disk boost file is honoured by NewManager.
+	write(t, root, ".bounty/repomap-boost.json", `{"order":["main.go","internal/format/format.go"]}`)
+	m2 := NewManager(root)
+	block2 := m2.Render()
+	iMain := strings.Index(block2, "main.go")
+	iFormat := strings.Index(block2, "format.go")
+	iStore := strings.Index(block2, "store.go")
+	if !(iMain >= 0 && iFormat >= 0 && iStore >= 0) {
+		t.Fatalf("missing entries:\n%s", block2)
+	}
+	if !(iMain < iFormat && iFormat < iStore) {
+		t.Errorf("disk boost order violated (want main < format < store):\n%s", block2)
+	}
+}
+
+// P8-3: Go receivers and TS annotated functions must render ONCE (function
+// and method entries at the same line collapse to the preferred kind).
+func TestRenderDedupesFunctionMethodPairs(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example.com/repo\n\ngo 1.22\n")
+	write(t, root, "store.go", "package main\n\nfunc (s *Store) Add(id int) {}\nfunc New() {}\n")
+	write(t, root, "util.ts", "export function truncate(text: string, max: number): string { return text; }\n")
+	m := NewManager(root)
+	block := m.Render()
+	if strings.Count(block, "Add") != 1 {
+		t.Errorf("Add must render once, got:\n%s", block)
+	}
+	if strings.Count(block, "truncate") != 1 {
+		t.Errorf("truncate must render once, got:\n%s", block)
+	}
+	if !strings.Contains(block, "[method]Add") {
+		t.Errorf("preferred kind for receiver should be method:\n%s", block)
+	}
+}

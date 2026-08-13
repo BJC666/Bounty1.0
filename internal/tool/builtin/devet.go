@@ -209,12 +209,12 @@ type devetSimulateAttackTool struct {
 func (t *devetSimulateAttackTool) Name() string   { return "devet_simulate_attack" }
 func (t *devetSimulateAttackTool) ReadOnly() bool { return true }
 func (t *devetSimulateAttackTool) Description() string {
-	return "Simulate a DeVET attack and verify detection (attack_type ID, e.g. A1_delegation_replacement)."
+	return "Simulate a DeVET attack and verify detection (e.g. A1_delegation_replacement)."
 }
 func (t *devetSimulateAttackTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "devet"} }
 
 func (t *devetSimulateAttackTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"attack_type":{"type":"string","description":"Attack type ID, e.g. A1_delegation_replacement, A2_sub_result_forgery, A7_grant_tampering"}},"required":["attack_type"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"attack_type":{"type":"string","description":"Attack type ID, e.g. A1_delegation_replacement"}},"required":["attack_type"]}`)
 }
 
 func (t *devetSimulateAttackTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {

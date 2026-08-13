@@ -35,10 +35,10 @@ func (b *BrowserTool) Name() string      { return "browser" }
 func (b *BrowserTool) ReadOnly() bool    { return true }
 func (b *BrowserTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (b *BrowserTool) Description() string {
-	return "Control a headless Chrome browser (navigate, screenshot, extract, click, type)."
+	return "Drive a headless Chrome browser (navigate/screenshot/extract/click/type)."
 }
 func (b *BrowserTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"action":{"type":"string","enum":["navigate","screenshot","content","click","type","start","stop"]},"url":{"type":"string","description":"URL (navigate)"},"selector":{"type":"string","description":"CSS selector"},"text":{"type":"string","description":"Text (type)"}},"required":["action"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"action":{"type":"string","enum":["navigate","screenshot","content","click","type","start","stop"]},"url":{"type":"string"},"selector":{"type":"string"},"text":{"type":"string"}},"required":["action"]}`)
 }
 
 func (b *BrowserTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {

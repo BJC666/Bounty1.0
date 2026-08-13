@@ -74,9 +74,9 @@ type WebFetchTool struct{}
 func (WebFetchTool) Name() string        { return "web_fetch" }
 func (WebFetchTool) ReadOnly() bool      { return true }
 func (WebFetchTool) Owner() tool.Owner   { return tool.Owner{Kind: "core", ID: "builtin"} }
-func (WebFetchTool) Description() string { return "Fetches a public URL and returns its content as plain text." }
+func (WebFetchTool) Description() string { return "Fetch a public URL; returns content as plain text." }
 func (WebFetchTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","format":"uri","maxLength":2048,"description":"URL to fetch"}},"required":["url"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","format":"uri","maxLength":2048}},"required":["url"]}`)
 }
 func (WebFetchTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct{ URL string `json:"url"` }

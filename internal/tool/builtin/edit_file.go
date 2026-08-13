@@ -22,10 +22,10 @@ func (EditFileTool) Name() string      { return "edit_file" }
 func (EditFileTool) ReadOnly() bool    { return false }
 func (EditFileTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (EditFileTool) Description() string {
-	return "Exact string replacement in a file; on drift retries whitespace-normalized; on failure returns context lines for self-correction."
+	return "Replace exact string in a file; on drift retries whitespace-normalized; on failure returns context lines."
 }
 func (EditFileTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","maxLength":1024},"old_string":{"type":"string","maxLength":65536},"new_string":{"type":"string","maxLength":1048576},"replace_all":{"type":"boolean"},"context_lines":{"type":"integer","minimum":1,"maximum":200,"description":"Context lines on failure (default 20)"}},"required":["file_path","old_string","new_string"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","maxLength":1024,"description":"Path (workspace-relative or absolute)"},"old_string":{"type":"string"},"new_string":{"type":"string"},"replace_all":{"type":"boolean"},"context_lines":{"type":"integer","minimum":1,"maximum":200,"description":"Context lines on failure (default 20)"}},"required":["file_path","old_string","new_string"]}`)
 }
 
 func (EditFileTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {

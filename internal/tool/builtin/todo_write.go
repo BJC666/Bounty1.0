@@ -28,10 +28,10 @@ func (t *TodoWriteTool) Name() string      { return "todo_write" }
 func (t *TodoWriteTool) ReadOnly() bool    { return true }
 func (t *TodoWriteTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (t *TodoWriteTool) Description() string {
-	return "Create/update the task list; persisted per session and re-injected each turn."
+	return "Create/update the task list (persisted, re-injected each turn)."
 }
 func (t *TodoWriteTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"todos":{"type":"array","maxItems":50,"items":{"type":"object","properties":{"content":{"type":"string","maxLength":500},"status":{"type":"string","enum":["pending","in_progress","completed"]},"activeForm":{"type":"string","maxLength":500}},"required":["content","status","activeForm"],"additionalProperties":false}}},"required":["todos"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"todos":{"type":"array","maxItems":50,"items":{"type":"object","properties":{"content":{"type":"string","maxLength":500},"status":{"type":"string","enum":["pending","in_progress","completed"]},"activeForm":{"type":"string","maxLength":500}},"required":["content","status","activeForm"]}}},"required":["todos"]}`)
 }
 
 func (t *TodoWriteTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {

@@ -153,16 +153,23 @@ type Agent struct {
 	// Project root for background-review auto-memory persistence.
 	memoryDir string
 
-	// baseSystemPrompt is the system prompt with the dynamic sections
-	// stripped; refreshContext re-appends the latest blocks to it.
+	// baseSystemPrompt is the immutable system prompt. Dynamic sections
+	// (repo map / todos) are injected into the FIRST user message instead
+	// (P8-3) so the system prompt never changes and the provider prefix
+	// cache stays valid across turns.
 	baseSystemPrompt string
 	repoMap          RepoMapProvider
 	repoBlock        string
 	todos            TodoSummaryProvider
 	todoBlock        string
-	provFactory      func(model string) (provider.Provider, error)
-	provLabel        string
-	devetVerifier    DeVETVerifier
+	// dynIdx / dynOriginal track the first-user-message injection point:
+	// which message holds the dynamic blocks and what its original content
+	// was before injection.
+	dynIdx        int
+	dynOriginal   string
+	provFactory   func(model string) (provider.Provider, error)
+	provLabel     string
+	devetVerifier DeVETVerifier
 
 	// Cached-prefix tracking for accurate cache hit/miss stats (the cacheable
 	// region of the previous request: all messages except the last one).
@@ -194,6 +201,7 @@ func New(prov provider.Provider, tools *tool.Registry, session *Session, opts Op
 		baseSystemPrompt: stripRepoMap(session.SystemPrompt),
 		repoMap:          opts.RepoMap,
 		todos:            opts.Todos,
+		dynIdx:           -1,
 		provFactory:      opts.ProvFactory,
 		provLabel:        opts.ProviderLabel,
 		devetVerifier:    opts.DeVET,
@@ -215,6 +223,8 @@ func (a *Agent) SetSession(s *Session) {
 	a.session = s
 	a.stormSig = make(map[string]int)
 	a.blockedTurnStreak = 0
+	a.dynIdx = -1
+	a.dynOriginal = ""
 }
 
 // refreshContext re-renders the dynamic system-prompt sections (repo map and
@@ -233,9 +243,89 @@ func (a *Agent) refreshContext(sess *Session) {
 			changed = true
 		}
 	}
-	if changed {
-		sess.SetSystemPrompt(a.baseSystemPrompt + a.repoBlock + a.todoBlock)
+	idx := firstUserMessageIndex(sess)
+	if idx < 0 {
+		return // no user message yet (first turn not started)
 	}
+	if a.dynIdx == idx && !changed {
+		return // injection already in place and blocks unchanged
+	}
+	orig := a.dynOriginal
+	if a.dynIdx != idx {
+		// A new first user message (session reset or compaction): capture
+		// its content as the baseline before injecting.
+		orig = userMessageText(sess, idx)
+	}
+	a.dynIdx = idx
+	a.dynOriginal = orig
+	blocks := a.repoBlock + a.todoBlock
+	if blocks != "" {
+		setUserMessageText(sess, idx, blocks+orig)
+	} else if orig != userMessageText(sess, idx) {
+		setUserMessageText(sess, idx, orig)
+	}
+
+}
+
+// firstUserMessageIndex returns the index of the first user-role message
+// after the system message, or -1 when there is none.
+func firstUserMessageIndex(sess *Session) int {
+	msgs := sess.Snapshot()
+	for i := 1; i < len(msgs); i++ {
+		if msgs[i].Role == "user" {
+			return i
+		}
+	}
+	return -1
+}
+
+// userMessageText extracts the plain text of a message: the Content field
+// on the legacy fast path, or the concatenated text parts for multimodal
+// messages.
+func userMessageText(sess *Session, idx int) string {
+	msgs := sess.Snapshot()
+	if idx < 0 || idx >= len(msgs) {
+		return ""
+	}
+	m := msgs[idx]
+	if m.Content != "" || len(m.Parts) == 0 {
+		return m.Content
+	}
+	var sb strings.Builder
+	for _, p := range m.Parts {
+		if p.Type == "text" {
+			sb.WriteString(p.Text)
+		}
+	}
+	return sb.String()
+}
+
+// setUserMessageText rewrites a message's text: Content on the legacy path,
+// or the first text part for multimodal messages (images preserved).
+func setUserMessageText(sess *Session, idx int, text string) {
+	msgs := sess.Snapshot()
+	if idx < 0 || idx >= len(msgs) {
+		return
+	}
+	m := msgs[idx]
+	if m.Content != "" || len(m.Parts) == 0 {
+		m.Content = text
+		m.Parts = nil
+		sess.UpdateMessage(idx, m)
+		return
+	}
+	found := false
+	for i := range m.Parts {
+		if m.Parts[i].Type == "text" {
+			m.Parts[i].Text = text
+			found = true
+			break
+		}
+	}
+	if !found {
+		m.Parts = append([]provider.ContentPart{{Type: "text", Text: text}}, m.Parts...)
+	}
+	sess.UpdateMessage(idx, m)
 }
 
 // stripRepoMap removes a trailing repo-map section (and everything after

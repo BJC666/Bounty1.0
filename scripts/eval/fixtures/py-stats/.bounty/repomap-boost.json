@@ -1,0 +1,18 @@
+{
+  "order": [
+    "stats/core.py",
+    "stats/io.py",
+    "tests/feature_variance.py",
+    "tests/regression_cli_mode.py",
+    "tests/regression_median.py",
+    "tests/regression_quantile.py",
+    "stats/cli.py",
+    "tests/feature_groupby.py",
+    "stats/__init__.py",
+    "tests/regression_csv.py",
+    "stats/groupby.py",
+    "stats/jsonout.py",
+    "stats/variance.py",
+    "tests/feature_jsonout.py"
+  ]
+}

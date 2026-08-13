@@ -37,7 +37,7 @@ func (f *FleetTool) Name() string   { return "fleet" }
 func (f *FleetTool) ReadOnly() bool { return false }
 
 func (f *FleetTool) Description() string {
-	return "Dispatch 2-64 parallel sub-agent tasks. Writers must predeclare non-overlapping write_paths."
+	return "Run 2-64 sub-agents in parallel; writers predeclare non-overlapping write_paths."
 }
 
 func (f *FleetTool) Schema() json.RawMessage {

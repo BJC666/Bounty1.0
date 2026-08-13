@@ -1,0 +1,20 @@
+{
+  "order": [
+    "internal/store/store.go",
+    "internal/format/format.go",
+    "internal/validate/regression_title_test.go",
+    "internal/validate/validate.go",
+    "main.go",
+    "README.md",
+    "internal/format/regression_index_test.go",
+    "internal/priority/priority_test.go",
+    "internal/undo/undo_test.go",
+    "internal/store/regression_pending_test.go",
+    "internal/export/export.go",
+    "internal/export/export_test.go",
+    "internal/priority/priority.go",
+    "internal/search/search.go",
+    "internal/search/search_test.go",
+    "internal/undo/undo.go"
+  ]
+}

@@ -21,7 +21,7 @@ func (r *RepoMapTool) Name() string      { return "repo_map" }
 func (r *RepoMapTool) ReadOnly() bool    { return true }
 func (r *RepoMapTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (r *RepoMapTool) Description() string {
-	return "Repository overview: layout, key symbols, dependency edges (refreshed)."
+	return "Repo overview: layout, key symbols, edges (refreshed)."
 }
 func (r *RepoMapTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{},"required":[]}`)

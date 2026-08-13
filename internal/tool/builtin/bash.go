@@ -37,10 +37,10 @@ func (b *BashTool) Name() string      { return "bash" }
 func (b *BashTool) ReadOnly() bool    { return false }
 func (b *BashTool) Owner() tool.Owner { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (b *BashTool) Description() string {
-	return "Execute a shell command (tests, build, git, file ops). timeout>60000ms or run_in_background=true starts detached; poll with bash_output, stop with bash_kill."
+	return "Execute shell commands (tests/build/git/file ops). timeout>60000 or run_in_background=true detaches; poll bash_output, stop bash_kill."
 }
 func (b *BashTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"command":{"type":"string","maxLength":4000,"description":"The shell command to execute"},"description":{"type":"string","maxLength":200},"timeout":{"type":"number","minimum":1,"maximum":600000,"description":"Timeout ms (max 600000; >60000 = background)"},"run_in_background":{"type":"boolean","description":"Run detached and return a job id immediately; poll with bash_output"}},"required":["command","description"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"command":{"type":"string","maxLength":4000},"description":{"type":"string","maxLength":200},"timeout":{"type":"number","minimum":1,"maximum":600000,"description":"Timeout ms (>60000 = background)"},"run_in_background":{"type":"boolean"}},"required":["command","description"]}`)
 }
 func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {

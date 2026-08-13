@@ -1,0 +1,17 @@
+{
+  "order": [
+    "src/strings.ts",
+    "src/numbers.ts",
+    "package.json",
+    "src/dates.ts",
+    "test/feature_median.test.ts",
+    "test/regression_clamp.test.ts",
+    "test/regression_truncate.test.ts",
+    "test/feature_relative_time.test.ts",
+    "test/feature_slugify.test.ts",
+    "src/median.ts",
+    "src/relative_time.ts",
+    "src/slugify.ts",
+    "test/strings.test.ts"
+  ]
+}

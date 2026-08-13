@@ -23,7 +23,7 @@ func (w *WebSearchTool) Description() string {
 	return "Search the web; returns titles, URLs, snippets."
 }
 func (w *WebSearchTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","maxLength":500,"description":"Search query"},"allowed_domains":{"type":"array","maxItems":20,"items":{"type":"string","maxLength":253}},"blocked_domains":{"type":"array","maxItems":20,"items":{"type":"string","maxLength":253}}},"required":["query"],"additionalProperties":false}`)
+	return json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","maxLength":500},"allowed_domains":{"type":"array","maxItems":20,"items":{"type":"string"}},"blocked_domains":{"type":"array","maxItems":20,"items":{"type":"string"}}},"required":["query"]}`)
 }
 
 func (w *WebSearchTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
