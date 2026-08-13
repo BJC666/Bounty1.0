@@ -147,16 +147,19 @@
 **P1-5 Todo 宿主状态与计划契约（S9）**
 - 目标：`todo_write` 落 SQLite；plan 姿态下系统提示强制"先输出结构化计划+todo，再动手"；每轮把当前 todo 摘要（≤10 行）注入 system 尾部；完成态变化通知 UI。
 - 验收：plan 姿态 Eval 中多步任务的步数下降、完成率上升；todo 状态在 UI 可见。
+- 状态（2026-08-13）：✅ 已交付——`todo_write` 重写为宿主状态源：写 SQLite `todos` 表（`ReplaceTodos`/`LoadTodos`，按 session 隔离，`schema.sql` 加表）；`boot` 注册带 store/session 的 `TodoWriteTool` 并注入 `todoSummary`（≤10 项，含 plan 姿态计划契约文本 `planContractText`）；Agent 新增 `Todos TodoSummaryProvider`，`refreshContext` 统一刷新 repo-map 与 todo 摘要，todo_write 执行后发通知事件同步 UI。测试全绿：`internal/store/todos_test.go`（7 项）、`todo_write_test.go`（7 项）、`boot_test.go`（含 plan 契约 2 项）、`repomap_test.go`（todo 摘要 2 项）。
 
 ### 阶段 2（第 3–4 周）：执行可靠性 —— 决定"能不能把活干完"
 
 **P2-1 锚点补丁（S5）**
 - 目标：`edit_file` 升级——`old_string` + 可选 `context_lines`（前后各 N 行锚点）；锚点命中但主体漂移时做空白归一化比对；仍失败时**返回目标文件附近 40 行**让模型自愈重试；`write_file` 覆盖已有文件时要求显式 `overwrite:true`。
 - 验收：20 个漂移用例（文件被外部改动后重试）成功率 ≥95%；Eval B 类 pass@1 提升 ≥15%。
+- 状态（2026-08-13）：✅ 已交付——`edit_file` 四级匹配：①精确（不唯一时报行号）→②空白归一化块（缩进/尾部空白/CRLF/空行漂移）→③行内空白剥离 →④全空白剥离块（如 `def f( a , b )` vs `def f(a, b)`，跨行漂移兜底）；全未命中返回「最近行上下文」自愈错误（词元命中+字符二元组相似度定位最近行，附 `重试` 提示）；`write_file` 默认拒绝覆盖既有文件，需显式 `overwrite:true`。测试全绿：`edit_file_drift_test.go` 20 个漂移用例 100% 通过（验收 ≥95%），另有精确/不唯一/上下文/覆盖守卫 8 项。Eval B 类提升待真实模型跑分。
 
 **P2-2 工具调用修复（S6）**
 - 目标：Provider 层加 `tool_choice` 强制；流式收完后校验 JSON，坏 JSON 走修复器（补尾括号/去尾逗号/修引号，借鉴 `repro/` 里 JSON 修复先例）；修复失败则把"原始输出+解析错误"回喂模型一次；schema 收紧（enum、maxLength、明确 required）。
 - 验收：坏 JSON 注入测试 20 例修复成功率 ≥80%；DeepSeek/Qwen Eval 工具失败率 <5%。
+- 状态（2026-08-13）：✅ 已交付——新增 `tool.RepairToolArgs`（`internal/tool/jsonrepair.go`）：尾逗号清理、补尾括号/引号（含嵌套）、单引号/弯引号归一、裸键加引号、NaN/Infinity→null、去代码围栏与前后缀杂文（按 json.Decoder 前缀截断）、非法转义（如 Windows 路径 `\U`）保留字面反斜杠，修复结果必须 `json.Valid` 才接受；Agent 流式收完后统一校验工具参数（`repairToolCallArgs`），修复失败时把「原始输出+解析错误」作为 tool 消息回喂模型重试一次（`jsonRetryUsed` 防循环）；9 个核心工具 schema 收紧（`maxLength`/`minimum`/`maximum`/`maxItems`/`additionalProperties`）。测试全绿：`jsonrepair_test.go` 28 个坏 JSON 用例 100% 修复（验收 ≥80%）、4 个不可修复用例正确报错；`internal/agent/json_retry_test.go` 验证「坏 JSON→回喂→模型重发→工具执行一次」全链路。Eval 工具失败率待真实模型跑分。注：`repro/` 中无 JSON 修复先例，按路线图自行实现。
 
 **P2-3 错误反馈整形**
 - 目标：工具错误统一返回"错误类型 + 原因 + 建议重试参数"三行格式（复用 8 类错误分类器），替换裸 error 字符串。
