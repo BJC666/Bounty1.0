@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -79,5 +80,31 @@ func TestJSONRepairRetryFeedsBackOnce(t *testing.T) {
 	}
 	if prov.calls != 3 {
 		t.Fatalf("provider called %d times, want 3 (bad -> feedback -> valid -> done)", prov.calls)
+	}
+}
+
+type failingTool struct{}
+
+func (failingTool) Name() string            { return "boom" }
+func (failingTool) Description() string     { return "always fails" }
+func (failingTool) Schema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
+func (failingTool) ReadOnly() bool          { return true }
+func (failingTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	return "", errors.New("no such file or directory")
+}
+
+func TestExecuteOneShapesToolError(t *testing.T) {
+	reg := tool.NewRegistry()
+	reg.Add(failingTool{})
+	a := New(nil, reg, NewSession("system"), Options{Gate: fakeGate{dec: Allow}})
+	tr := a.executeOne(context.Background(), provider.ToolCall{ID: "c1", Name: "boom", Args: json.RawMessage(`{}`)})
+	if tr.Err == nil {
+		t.Fatal("expected error")
+	}
+	msg := tr.Err.Error()
+	if !strings.Contains(msg, "【错误类型】文件不存在") ||
+		!strings.Contains(msg, "【原因】") ||
+		!strings.Contains(msg, "【建议重试】") {
+		t.Fatalf("error not shaped: %s", msg)
 	}
 }

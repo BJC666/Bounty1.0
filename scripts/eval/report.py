@@ -49,9 +49,19 @@ def stats(rows):
         "avg_out_tok": avg("output_tokens"),
         "avg_wall": avg("wall_seconds"),
         "tool_err_rate": (100.0 * errs / calls) if calls else 0.0,
+        "self_heal_rate": self_heal_rate(rows),
         "timeouts": sum(1 for r in rows if r.get("timeout")),
         "crashes": sum(1 for r in rows if not r.get("timeout") and not r.get("verdict") and "异常退出" in (r.get("reason") or "")),
     }
+
+
+def self_heal_rate(rows):
+    """P2-3 指标：出现过工具错误的任务中，最终判定通过的比例（首轮失败后自愈）。"""
+    erred = [r for r in rows if (r.get("n_tool_errors") or 0) > 0]
+    if not erred:
+        return 0.0
+    healed = sum(1 for r in erred if r.get("verdict"))
+    return 100.0 * healed / len(erred)
 
 
 def build_report(run_id, models):
@@ -66,8 +76,8 @@ def build_report(run_id, models):
 
     add("## 总览")
     add("")
-    add("| 模型 | pass@1 | A | B | C | 平均步数 | 平均输入 tok | 平均输出 tok | 工具失败率 | 超时数 |")
-    add("|---|---|---|---|---|---|---|---|---|---|")
+    add("| 模型 | pass@1 | A | B | C | 平均步数 | 平均输入 tok | 平均输出 tok | 工具失败率 | 自愈率 | 超时数 |")
+    add("|---|---|---|---|---|---|---|---|---|---|---|")
     for model in sorted(models):
         cats = models[model]
         all_rows = [r for v in cats.values() for r in v]
@@ -76,7 +86,7 @@ def build_report(run_id, models):
         add(f"| {model} | {pct(s['passed'], s['total'])} "
             f"| {pct(a['passed'], a['total'])} | {pct(b['passed'], b['total'])} | {pct(c['passed'], c['total'])} "
             f"| {s['avg_steps']:.1f} | {s['avg_in_tok']:.0f} | {s['avg_out_tok']:.0f} "
-            f"| {s['tool_err_rate']:.1f}% | {s['timeouts']} |")
+            f"| {s['tool_err_rate']:.1f}% | {s['self_heal_rate']:.1f}% | {s['timeouts']} |")
     add("")
 
     for model in sorted(models):

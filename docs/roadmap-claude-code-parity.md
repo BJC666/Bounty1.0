@@ -164,6 +164,7 @@
 **P2-3 错误反馈整形**
 - 目标：工具错误统一返回"错误类型 + 原因 + 建议重试参数"三行格式（复用 8 类错误分类器），替换裸 error 字符串。
 - 验收：Eval 中"首轮失败后自愈"比例 ≥60%（当前无此统计，先在 Eval 平台加指标）。
+- 状态（2026-08-13）：✅ 已交付——新增 `tool.ShapeError`（`internal/tool/errshape.go`）：工具执行错误统一整形为「【错误类型】/【原因】/【建议重试】」三行，12 类规则分类（未知工具/权限拒绝/文件不存在/匹配不唯一/匹配未命中/路径编码/超时/网络/内容过滤/参数错误/其他，与 provider 8 类命名对齐），原因超 500 字符截断，建议重试带可操作参数（如 bash timeout 上限、edit_file replace_all）；`executeOne` 仅对 `t.Execute` 错误整形（gate/hook 错误保持原样）；Eval 平台新增「自愈率」指标：runner 记录 `first_error_step`，judge 透传，report 计算「有工具错误的任务中最终通过的比例」并加总览列。测试全绿：`errshape_test.go` 11 项、`agent/json_retry_test.go` 整形链路 1 项；selfcheck 33/33。≥60% 验收待真实模型跑分。
 
 **P2-4 Windows 命令体验**
 - 现状：`bash.go` 已做 sh→cmd 回退、GBK 解码、路径转换（此前演示中的三连错已修）。

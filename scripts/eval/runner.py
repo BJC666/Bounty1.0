@@ -85,6 +85,7 @@ def parse_transcript(text):
     tool_errors = []
     turns_complete = 0
     final_err = None
+    first_error_step = None
     for ev in events:
         if not isinstance(ev, dict):
             continue
@@ -106,6 +107,8 @@ def parse_transcript(text):
                     "tool": ev.get("tool_name"),
                     "err": (ev.get("tool_err") or "")[:300],
                 })
+                if first_error_step is None:
+                    first_error_step = steps
         elif t == "turn_complete":
             turns_complete += 1
             if ev.get("turn_err"):
@@ -121,6 +124,7 @@ def parse_transcript(text):
         "tool_calls": tool_calls,
         "tool_errors": tool_errors,
         "n_tool_errors": len(tool_errors),
+        "first_error_step": first_error_step,
         "turns_complete": turns_complete,
         "final_err": final_err,
     }

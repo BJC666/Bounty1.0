@@ -574,6 +574,11 @@ func (a *Agent) executeOne(ctx context.Context, tc provider.ToolCall) toolResult
 	}
 
 	result, err := t.Execute(ctx, tc.Args)
+	if err != nil {
+		// P2-3: reshape tool execution errors into the three-line format
+		// (错误类型/原因/建议重试) the model uses to self-correct next turn.
+		err = errors.New(tool.ShapeError(tc.Name, err))
+	}
 
 	if len(result) > a.maxToolOut {
 		original := len(result)

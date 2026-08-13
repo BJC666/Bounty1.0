@@ -233,6 +233,7 @@ def base(run):
         "output_tokens": run.get("output_tokens"),
         "tool_calls": run.get("tool_calls"),
         "n_tool_errors": run.get("n_tool_errors"),
+        "first_error_step": run.get("first_error_step"),
         "wall_seconds": run.get("wall_seconds"),
         "timeout": run.get("timeout"),
         "final_text": (run.get("final_text") or "")[:500],
