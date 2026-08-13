@@ -293,6 +293,7 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 
 	a.refreshContext(sess)
 
+	jsonRetryUsed := false
 	for step := 0; step < a.maxSteps; step++ {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -385,6 +386,26 @@ func (a *Agent) Run(ctx context.Context, input string) error {
 			}
 		}
 	doneStreaming:
+
+		// P2-2: validate and repair tool-call argument JSON after the stream
+		// ends. When repair fails, feed the raw output + parse error back to
+		// the model once so it can re-emit valid arguments.
+		if len(toolCalls) > 0 {
+			if failed := repairToolCallArgs(toolCalls); len(failed) > 0 && !jsonRetryUsed {
+				jsonRetryUsed = true
+				retryMsg := provider.Message{Role: "assistant", Content: textBuf.String()}
+				for _, tc := range toolCalls {
+					retryMsg.ToolCalls = append(retryMsg.ToolCalls, tc)
+				}
+				sess.Add(retryMsg)
+				for _, tc := range failed {
+					feedback := jsonFeedbackMessage(tc)
+					sess.Add(provider.Message{Role: "tool", Content: feedback, ToolID: tc.ID, ToolName: tc.Name})
+					a.sink.Emit(event.Event{Type: "warning", TextDelta: feedback})
+				}
+				continue
+			}
+		}
 
 		// Build and record the assistant message.
 		assistMsg := provider.Message{Role: "assistant", Content: textBuf.String()}
@@ -589,6 +610,34 @@ func (a *Agent) executeOne(ctx context.Context, tc provider.ToolCall) toolResult
 	tr := toolResult{CallID: tc.ID, Name: tc.Name, Result: result, Err: err}
 	a.sink.Emit(event.Event{Type: "tool_result", ToolCallID: tc.ID, ToolResult: result, ToolErr: errStr(err)})
 	return tr
+}
+
+// repairToolCallArgs validates every tool call's arguments and repairs broken
+// JSON in place. It returns the calls whose arguments could not be repaired.
+func repairToolCallArgs(toolCalls []provider.ToolCall) []provider.ToolCall {
+	var failed []provider.ToolCall
+	for i := range toolCalls {
+		if json.Valid(toolCalls[i].Args) {
+			continue
+		}
+		fixed, err := tool.RepairToolArgs(toolCalls[i].Args)
+		if err != nil {
+			failed = append(failed, toolCalls[i])
+			continue
+		}
+		toolCalls[i].Args = fixed
+	}
+	return failed
+}
+
+// jsonFeedbackMessage is the one-shot repair prompt sent back to the model
+// when tool-call arguments are not valid JSON.
+func jsonFeedbackMessage(tc provider.ToolCall) string {
+	raw := string(tc.Args)
+	if r := []rune(raw); len(r) > 800 {
+		raw = string(r[:800]) + "...(截断)"
+	}
+	return fmt.Sprintf("Error: 工具调用 %s 的 arguments 不是有效 JSON，无法执行。请重新输出该工具调用，使用合法的 JSON 参数（注意转义反斜杠与引号）。\n原始输出: %s", tc.Name, raw)
 }
 
 // mergeToolCallDelta accumulates streaming tool-call fragments onto a running

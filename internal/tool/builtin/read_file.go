@@ -24,7 +24,7 @@ func (ReadFileTool) Description() string {
 	return "Reads a file from the local filesystem. Returns content with line numbers."
 }
 func (ReadFileTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","description":"The absolute path to the file to read"},"offset":{"type":"integer","description":"Line number to start reading from"},"limit":{"type":"integer","description":"Number of lines to read"}},"required":["file_path"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","maxLength":1024,"description":"The absolute path to the file to read"},"offset":{"type":"integer","minimum":1,"description":"Line number to start reading from"},"limit":{"type":"integer","minimum":1,"maximum":10000,"description":"Number of lines to read"}},"required":["file_path"],"additionalProperties":false}`)
 }
 func (ReadFileTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {

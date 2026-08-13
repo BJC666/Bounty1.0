@@ -25,7 +25,7 @@ func (EditFileTool) Description() string {
 	return "Performs exact string replacement in a file. On drift (whitespace/indentation changes) it retries with whitespace-normalized matching; on failure it returns surrounding lines for self-correction."
 }
 func (EditFileTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"replace_all":{"type":"boolean"},"context_lines":{"type":"integer","description":"On failure, return this many lines of context around the best-guess location (default 20)"}},"required":["file_path","old_string","new_string"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","maxLength":1024},"old_string":{"type":"string","maxLength":65536},"new_string":{"type":"string","maxLength":1048576},"replace_all":{"type":"boolean"},"context_lines":{"type":"integer","minimum":1,"maximum":200,"description":"On failure, return this many lines of context around the best-guess location (default 20)"}},"required":["file_path","old_string","new_string"],"additionalProperties":false}`)
 }
 
 func (EditFileTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {

@@ -30,7 +30,7 @@ func (b *BashTool) Description() string {
 	return "Execute a shell command. Use for running tests, building, file operations, git commands, and other terminal tasks."
 }
 func (b *BashTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"command":{"type":"string","description":"The shell command to execute"},"description":{"type":"string","description":"Clear, concise description of what this command does"},"timeout":{"type":"number","description":"Optional timeout in milliseconds (max 600000)"}},"required":["command","description"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"command":{"type":"string","maxLength":4000,"description":"The shell command to execute"},"description":{"type":"string","maxLength":200,"description":"Clear, concise description of what this command does"},"timeout":{"type":"number","minimum":1,"maximum":600000,"description":"Optional timeout in milliseconds (max 600000)"}},"required":["command","description"],"additionalProperties":false}`)
 }
 func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {

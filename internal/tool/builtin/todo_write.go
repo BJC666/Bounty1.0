@@ -31,7 +31,7 @@ func (t *TodoWriteTool) Description() string {
 	return "Create and update the task list. The list is persisted per session, shown in the UI, and re-injected into context each turn."
 }
 func (t *TodoWriteTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"todos":{"type":"array","items":{"type":"object","properties":{"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","completed"]},"activeForm":{"type":"string"}},"required":["content","status","activeForm"]}}},"required":["todos"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"todos":{"type":"array","maxItems":50,"items":{"type":"object","properties":{"content":{"type":"string","maxLength":500},"status":{"type":"string","enum":["pending","in_progress","completed"]},"activeForm":{"type":"string","maxLength":500}},"required":["content","status","activeForm"],"additionalProperties":false}}},"required":["todos"],"additionalProperties":false}`)
 }
 
 func (t *TodoWriteTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {

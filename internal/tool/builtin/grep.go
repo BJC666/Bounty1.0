@@ -22,7 +22,7 @@ func (GrepTool) Description() string {
 	return "Search file contents with regex. Prefers ripgrep (rg) when available."
 }
 func (GrepTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"pattern":{"type":"string","description":"The regex pattern to search for"},"path":{"type":"string","description":"File or directory to search in"},"glob":{"type":"string","description":"Glob pattern to filter files, e.g. *.go"}},"required":["pattern"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"pattern":{"type":"string","maxLength":1000,"description":"The regex pattern to search for"},"path":{"type":"string","maxLength":1024,"description":"File or directory to search in"},"glob":{"type":"string","maxLength":512,"description":"Glob pattern to filter files, e.g. *.go"}},"required":["pattern"],"additionalProperties":false}`)
 }
 func (GrepTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
 	var params struct {
