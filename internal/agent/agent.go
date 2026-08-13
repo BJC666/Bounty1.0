@@ -97,6 +97,10 @@ type Options struct {
 	// Todos, when set, injects the current todo list into the system prompt
 	// tail and refreshes it per user turn.
 	Todos TodoSummaryProvider
+	// ProvFactory builds a provider for a requested model name ("provider/model"
+	// or a bare model). Used by sub-agents (task tool) to switch to a cheaper
+	// model; nil means model overrides are unavailable.
+	ProvFactory func(model string) (provider.Provider, error)
 }
 
 // Agent is the core turn-taking loop: stream LLM output, collect tool calls,
@@ -147,6 +151,7 @@ type Agent struct {
 	repoBlock        string
 	todos            TodoSummaryProvider
 	todoBlock        string
+	provFactory      func(model string) (provider.Provider, error)
 
 	// Cached-prefix tracking for accurate cache hit/miss stats (the cacheable
 	// region of the previous request: all messages except the last one).
@@ -178,6 +183,7 @@ func New(prov provider.Provider, tools *tool.Registry, session *Session, opts Op
 		baseSystemPrompt: stripRepoMap(session.SystemPrompt),
 		repoMap:          opts.RepoMap,
 		todos:            opts.Todos,
+		provFactory:      opts.ProvFactory,
 		hooks:            opts.Hooks,
 		asker:            opts.Asker,
 		checkpointer:     opts.Checkpointer,

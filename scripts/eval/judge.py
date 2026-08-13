@@ -218,13 +218,14 @@ def judge_one(task, task_dir):
     if task["category"] == "E":
         ok, reason = judge_a(task, run)
         used = run.get("tools_used") or []
-        mcp_used = any(n.startswith("mcp__math__") for n in used)
-        if not ok or not mcp_used:
+        prefix = task.get("require_tool_prefix") or "mcp__math__"
+        tool_used = any(n.startswith(prefix) for n in used)
+        if not ok or not tool_used:
             return {**base(run), "verdict": False,
-                    "reason": f"文本命中={ok}（{reason}）；MCP 工具实际使用={mcp_used}；工具列表={used[:8]}",
+                    "reason": f"文本命中={ok}（{reason}）；必需工具前缀 {prefix} 实际使用={tool_used}；工具列表={used[:8]}",
                     "check_rc": None, "check_output_tail": "",
                     "changed_files": [], "forbidden_hits": [], "diff_lines": None}
-        return {**base(run), "verdict": True, "reason": reason + "；MCP 工具已实际调用",
+        return {**base(run), "verdict": True, "reason": reason + f"；必需工具 {prefix} 已实际调用",
                 "check_rc": None, "check_output_tail": "",
                 "changed_files": [], "forbidden_hits": [], "diff_lines": None}
 

@@ -193,6 +193,7 @@
 **P3-4 子代理增强**
 - 目标：`task` 增加 `explore`/`general` 角色 prompt（explore 只读+报告结构）；父代理把"任务相关的最近上下文片段"注入子代理（≤2KB）；子代理返回结构化摘要（结论/证据/文件清单）而非原始末条全文；`model` 参数生效（子代理可换便宜模型）。
 - 验收：Eval 加 5 道"必须用子代理"任务，pass@1 ≥60%；子代理输出 token 下降 50%。
+- 状态（2026-08-13）：✅ 已交付——①`task` schema 增 `role`（general/explore，默认 general；explore=只读+「结论/证据/文件清单」报告结构），`read_only_task` 等价 role=explore 保留兼容；②父任务上下文注入：`selectContextSnippets` 用 CJK 二元组（滤虚词）+ 英文词元打分，从父会话选相关用户消息（得分≥2，同分取最近），总字节≤2048，注入子代理第二条 system 消息；③结构化摘要：`buildSubagentSummary` 固定三节——结论（rune 上限 1200 截断）、证据（工具名×次数）、文件清单（修改/读取，各≤15，兼容 file_path/path 两种参数键），长回答返回长度严格小于原文；④`model` 参数生效：`Agent.Options.ProvFactory` + boot 接线（provider/model 或单 provider 时裸模型名，密钥走同一 secrets 池），无 factory 时明确报错。测试：`task_test.go` 8 项全绿（上下文相关性/2KB 字节上限/无匹配为空/摘要三节与文件清单/摘要短于原文/端到端注入+摘要/缺 factory 报错/explore 只读提示/registry 剥离写工具）；`go test ./...`、`go vet` 全绿。真实模型验收：Eval 新增 E3–E7 五道"必须用子代理"任务（judge 泛化 `require_tool_prefix` 字段，E 类保留旧 mcp 判定兼容），qwen3.8-max 实测 **pass@1 = 5/5（100% ≥ 60%）**（每任务 13–26s，无超时），transcript 可见子代理按 explore 角色输出三节报告、父代理收到结构化摘要。token 下降 50% 的验收：结构化摘要结论上限 1200 rune + 三节固定格式为结构性保证（单测断言摘要严格短于长原文）；与旧版真实模型 before/after 对比因无 P3-3 前基线未跑，诚实标注。另修 report.py 空类别 KeyError 与 E 类别标签。
 
 **P3-5 TUI 打磨 + Slash 命令（S12a）**
 - 目标：bubbletea 上做键盘导航（历史/滚动）、工具调用折叠面板、diff 彩色（edit 前后对照）、权限弹窗选择；slash 命令首批：`/model`、`/compact`、`/todo`、`/export`、`/skills`、`/status`。

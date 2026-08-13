@@ -118,8 +118,8 @@
 
 | 功能 | Bounty | OpenClaw | Claude Code | Hermes | Reasonix |
 |------|:---:|:---:|:---:|:---:|:---:|
-| 单个子代理 | ✅ task | ✅ ACP | ✅ Task | ✅ delegate | ✅ task |
-| 只读子代理 | ✅ read_only_task | ✅ | ✅ | ❌ | ✅ |
+| 单个子代理 | ✅ task（general/explore） | ✅ ACP | ✅ Task | ✅ delegate | ✅ task |
+| 只读子代理 | ✅ read_only_task / task(explore) | ✅ | ✅ | ❌ | ✅ |
 | 并行子代理 | ✅ fleet(2-64) | ✅ | ✅ | ✅ async | ✅ fleet |
 | 上下文隔离 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 深度限制 | ✅ maxDepth=2 | ✅ | ✅ | ✅ | ✅ 2 |

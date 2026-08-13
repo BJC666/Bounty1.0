@@ -663,7 +663,8 @@
         "42、42"
       ],
       "any_of": [],
-      "golden_answer": "42、42"
+      "golden_answer": "42、42",
+      "require_tool_prefix": "mcp__math__"
     },
     {
       "id": "E2",
@@ -675,7 +676,73 @@
         "55"
       ],
       "any_of": [],
-      "golden_answer": "55"
+      "golden_answer": "55",
+      "require_tool_prefix": "mcp__math__"
+    },
+    {
+      "id": "E3",
+      "category": "E",
+      "fixture": "go-todo",
+      "title": "子代理调研：main.go 函数数量",
+      "prompt": "使用 task 工具派出一个子代理（role=explore）调研代码库：统计 main.go 中 func 定义的 Go 函数数量（main 和 usage 都算）。把子代理结论中的数字作为你的最终答案，只输出这个数字。",
+      "critical_patterns": [
+        "2"
+      ],
+      "any_of": [],
+      "golden_answer": "2",
+      "require_tool_prefix": "task"
+    },
+    {
+      "id": "E4",
+      "category": "E",
+      "fixture": "py-stats",
+      "title": "子代理调研：stats 目录文件数",
+      "prompt": "使用 task 工具派出一个子代理（role=explore）调研项目：统计 stats 目录下 .py 文件的数量（包括 __init__.py）。把子代理结论中的数字作为你的最终答案，只输出这个数字。",
+      "critical_patterns": [
+        "4"
+      ],
+      "any_of": [],
+      "golden_answer": "4",
+      "require_tool_prefix": "task"
+    },
+    {
+      "id": "E5",
+      "category": "E",
+      "fixture": "ts-util",
+      "title": "子代理调研：strings.ts 导出数量",
+      "prompt": "使用 task 工具派出一个子代理（role=explore）调研项目：统计 src/strings.ts 中 export 声明的数量。把子代理结论中的数字作为你的最终答案，只输出这个数字。",
+      "critical_patterns": [
+        "3"
+      ],
+      "any_of": [],
+      "golden_answer": "3",
+      "require_tool_prefix": "task"
+    },
+    {
+      "id": "E6",
+      "category": "E",
+      "fixture": "py-stats",
+      "title": "子代理调研：core.py 函数数量",
+      "prompt": "使用 task 工具派出一个子代理（role=explore）调研项目：统计 stats/core.py 中 def 定义的函数数量。把子代理结论中的数字作为你的最终答案，只输出这个数字。",
+      "critical_patterns": [
+        "4"
+      ],
+      "any_of": [],
+      "golden_answer": "4",
+      "require_tool_prefix": "task"
+    },
+    {
+      "id": "E7",
+      "category": "E",
+      "fixture": "go-todo",
+      "title": "只读子代理：README 首行",
+      "prompt": "使用 read_only_task 工具派一个只读子代理，读取 README.md 并报告文件的第一行内容。把子代理报告的第一行原文复述为你的最终答案。",
+      "critical_patterns": [
+        "go-todo"
+      ],
+      "any_of": [],
+      "golden_answer": "README.md 的第一行是：# go-todo",
+      "require_tool_prefix": "read_only_task"
     }
   ]
 }

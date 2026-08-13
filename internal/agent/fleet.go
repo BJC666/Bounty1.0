@@ -100,7 +100,7 @@ func (f *FleetTool) Execute(ctx context.Context, args json.RawMessage) (string, 
 			}
 			childCtx := WithSubagentDepth(ctx, depth+1)
 			readOnly := len(writePaths) == 0
-			out, err := runChildAgent(childCtx, f.parentAgent, taskPrompt, writePaths, readOnly)
+			out, err := runChildAgent(childCtx, f.parentAgent, taskPrompt, writePaths, readOnly, "general", "")
 			if err != nil {
 				results[idx] = fmt.Sprintf("Task %d ERROR: %v", idx+1, err)
 			} else {

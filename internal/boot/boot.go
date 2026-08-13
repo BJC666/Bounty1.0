@@ -295,6 +295,37 @@ func Build(cfg *config.Config, opts Options) (*control.Controller, error) {
 		MemoryDir: workspaceRootFor(cfg),
 		RepoMap:   repoMapMgr,
 		Todos:     todoSum,
+		// P3-4: sub-agents (task tool) may switch to a cheaper configured
+		// model via "provider/model" or a bare model name (bare names resolve
+		// against the single configured provider).
+		ProvFactory: func(model string) (provider.Provider, error) {
+			provName, modelName := parseModel(model)
+			var subCfg *config.ProviderConfig
+			for i := range cfg.Providers {
+				if cfg.Providers[i].Name == provName {
+					subCfg = &cfg.Providers[i]
+					break
+				}
+			}
+			if subCfg == nil && len(cfg.Providers) == 1 {
+				subCfg = &cfg.Providers[0]
+			}
+			if subCfg == nil {
+				return nil, fmt.Errorf("provider %q not found in config", provName)
+			}
+			var subKey string
+			if subCfg.Kind != "ollama" {
+				keyPool, err := secrets.NewPool(subCfg.APIKeyEnv)
+				if err != nil {
+					return nil, fmt.Errorf("api key for %s: %w", provName, err)
+				}
+				subKey, err = keyPool.Get()
+				if err != nil {
+					return nil, fmt.Errorf("api key for %s: %w", provName, err)
+				}
+			}
+			return BuildProvider(subCfg.Kind, subCfg.BaseURL, subKey, modelName, subCfg.ContextWindow)
+		},
 	})
 
 	// 12b. Register subagent tools onto the same registry

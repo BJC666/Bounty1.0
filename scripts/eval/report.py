@@ -15,7 +15,7 @@ from pathlib import Path
 EVAL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EVAL_DIR.parents[1]
 
-CATEGORY_NAMES = {"A": "仓库理解", "B": "多文件改动", "C": "修 bug", "E": "MCP 工具"}
+CATEGORY_NAMES = {"A": "仓库理解", "B": "多文件改动", "C": "修 bug", "D": "记忆", "E": "生态（MCP/子代理）"}
 
 
 def collect(run_dirs):
@@ -35,7 +35,11 @@ def pct(passed, total):
 
 def stats(rows):
     if not rows:
-        return {}
+        return {
+            "total": 0, "passed": 0, "avg_steps": 0.0, "avg_in_tok": 0.0,
+            "avg_out_tok": 0.0, "avg_wall": 0.0, "tool_err_rate": 0.0,
+            "self_heal_rate": 0.0, "timeouts": 0, "crashes": 0,
+        }
     def avg(key):
         vals = [r.get(key) for r in rows if isinstance(r.get(key), (int, float))]
         return sum(vals) / len(vals) if vals else 0.0
@@ -70,21 +74,23 @@ def build_report(run_id, models):
     add(f"# Bounty Eval 基线报告（run {run_id}）")
     add("")
     add(f"- 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    add(f"- 任务集：`scripts/eval/tasks.json`（A 仓库理解 10 + B 多文件改动 10 + C 修 bug 10）")
-    add("- 判定规则：A=关键点命中；B=测试命令通过+禁改文件未动；C=测试通过+diff 行数≤预算；全部限 max_steps=50")
+    add(f"- 任务集：`scripts/eval/tasks.json`（A 仓库理解 10 + B 多文件改动 10 + C 修 bug 10 + D 记忆 3 + E 生态 7）")
+    add("- 判定规则：A=关键点命中；B=测试命令通过+禁改文件未动；C=测试通过+diff 行数≤预算；D=关键点命中；E=关键点命中+必需工具前缀实际调用；全部限 max_steps=50")
     add("")
 
     add("## 总览")
     add("")
-    add("| 模型 | pass@1 | A | B | C | 平均步数 | 平均输入 tok | 平均输出 tok | 工具失败率 | 自愈率 | 超时数 |")
-    add("|---|---|---|---|---|---|---|---|---|---|---|")
+    add("| 模型 | pass@1 | A | B | C | D | E | 平均步数 | 平均输入 tok | 平均输出 tok | 工具失败率 | 自愈率 | 超时数 |")
+    add("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for model in sorted(models):
         cats = models[model]
         all_rows = [r for v in cats.values() for r in v]
         s = stats(all_rows)
         a = stats(cats.get("A", [])); b = stats(cats.get("B", [])); c = stats(cats.get("C", []))
+        d = stats(cats.get("D", [])); e = stats(cats.get("E", []))
         add(f"| {model} | {pct(s['passed'], s['total'])} "
             f"| {pct(a['passed'], a['total'])} | {pct(b['passed'], b['total'])} | {pct(c['passed'], c['total'])} "
+            f"| {pct(d['passed'], d['total'])} | {pct(e['passed'], e['total'])} "
             f"| {s['avg_steps']:.1f} | {s['avg_in_tok']:.0f} | {s['avg_out_tok']:.0f} "
             f"| {s['tool_err_rate']:.1f}% | {s['self_heal_rate']:.1f}% | {s['timeouts']} |")
     add("")
