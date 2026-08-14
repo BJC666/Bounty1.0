@@ -386,9 +386,9 @@
 
 > 目标：把 8 周量化目标里剩余的硬欠账（token ↓40%、A 类 ↓30%）打成闭环；把 DeVET 差异化升级为可演示的真实性证明；把三证据链打包成答辩/论文可直接引用的材料。排序 = 杠杆优先 + 依赖靠后（P8-1 等 key，随时插队）。
 
-**P8-1 双模型基线闭环（DeepSeek 补跑 + 对比表）** ⏳ 依赖有效 key
-- 交付：有效 `DEEPSEEK_API_KEY` → `runner.py --models deepseek/deepseek-v4-pro --rebuild`（49 题全量）→ judge/report 入库；`docs/eval-baseline.md` 增「双模型对比表」（pass@1/步数/输入输出 tok/失败率/成本，qwen vs deepseek 并列）；G 类（多模态）按文档标注 deepseek 预期失败。
-- 验收：docs/eval/ 出现 deepseek 全量报告；对比表入库。
+**P8-1 双模型基线闭环（DeepSeek 补跑 + 对比表 ✅ 2026-08-15）**
+- 交付：有效 key 到达后 `runner.py --models deepseek/deepseek-v4-pro --parallel 1`（50 题全量）→ judge/report 入库；`docs/eval-baseline.md` 增「双模型对比表」（pass@1/步数/输入输出 tok/失败率，qwen vs deepseek 并列）；G 类（多模态）按文档标注 deepseek 预期失败。顺带修复 `report.py` 明细表/失败明细只遍历 A/B/C/E、总览缺 F/G 列的缺口（DeepSeek G 类失败首次让该缺口显形）。
+- 验收：`docs/eval/p81-deepseek-report.md` 全量报告入库（**94.0% 47/50；纯文本 47/47 = 100%**；A/B/C/D/E/F 全 100%、G 0/3 为 API 不支持 `image_url` 的预期失败并如实标注；步数 3.2、输入 12,352 tok、输出 419 tok、工具失败率 1.5%、验证失败 0、超时 0）；对比表入库（qwen P8-r7 100% vs deepseek 纯文本 100%，步数/token deepseek 全面略优）；history.csv 追加 A/B/C/ALL 四行。
 
 **P8-2 A 类步数攻坚（P1-3 闭环 ✅ 2026-08-14）**
 - 交付：①**repomap 命中率重排**——`scripts/eval/hitrank.py` 从 eval transcript 统计实际读文件序列（首读权重 3/后续 1），生成 `fixtures/*/.bounty/repomap-boost.json`，高频文件提前渲染；②系统提示加带实例的 map 命中示范（`[function]FormatList` → `read_file internal/format/format.go`）；③口径：A 类步数取连续两轮均值。

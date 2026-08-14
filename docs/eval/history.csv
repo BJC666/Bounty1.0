@@ -63,3 +63,7 @@ date,run_id,model,category,total,passed,pass_rate,avg_steps,avg_in_tok,avg_out_t
 2026-08-14,P8-r7,qwen/qwen3.8-max,B,10,10,100.0,4.0,16344,598,0.0,14.8,0
 2026-08-14,P8-r7,qwen/qwen3.8-max,C,10,10,100.0,4.7,19521,706,2.2,17.8,0
 2026-08-14,P8-r7,qwen/qwen3.8-max,ALL,49,49,100.0,3.4,13076,500,0.7,12.4,0
+2026-08-15,deepseek-v4-pro 基线（P8-1）,deepseek/deepseek-v4-pro,A,10,10,100.0,2.0,7367,366,0.0,5.7,0
+2026-08-15,deepseek-v4-pro 基线（P8-1）,deepseek/deepseek-v4-pro,B,10,10,100.0,4.4,19060,769,4.0,11.8,0
+2026-08-15,deepseek-v4-pro 基线（P8-1）,deepseek/deepseek-v4-pro,C,10,10,100.0,4.1,16588,516,0.0,9.5,0
+2026-08-15,deepseek-v4-pro 基线（P8-1）,deepseek/deepseek-v4-pro,ALL,50,47,94.0,3.2,12352,419,1.5,7.5,0

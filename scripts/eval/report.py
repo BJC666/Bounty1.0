@@ -78,23 +78,25 @@ def build_report(run_id, models):
     add(f"# Bounty Eval 基线报告（run {run_id}）")
     add("")
     add(f"- 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    add(f"- 任务集：`scripts/eval/tasks.json`（A 仓库理解 10 + B 多文件改动 10 + C 修 bug 10 + D 记忆 3 + E 生态 7）")
+    add(f"- 任务集：`scripts/eval/tasks.json`（A 仓库理解 10 + B 多文件改动 10 + C 修 bug 10 + D 记忆 3 + E 生态 7 + F DeVET 攻防 7 + G 多模态 3）")
     add("- 判定规则：A=关键点命中；B=测试命令通过+禁改文件未动；C=测试通过+diff 行数≤预算；D=关键点命中；E=关键点命中+必需工具前缀实际调用；全部限 max_steps=50")
     add("")
 
     add("## 总览")
     add("")
-    add("| 模型 | pass@1 | A | B | C | D | E | 平均步数 | 平均输入 tok | 平均输出 tok | 工具调用失败率 | 验证失败率 | 自愈率 | 超时数 |")
-    add("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    add("| 模型 | pass@1 | A | B | C | D | E | F | G | 平均步数 | 平均输入 tok | 平均输出 tok | 工具调用失败率 | 验证失败率 | 自愈率 | 超时数 |")
+    add("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for model in sorted(models):
         cats = models[model]
         all_rows = [r for v in cats.values() for r in v]
         s = stats(all_rows)
         a = stats(cats.get("A", [])); b = stats(cats.get("B", [])); c = stats(cats.get("C", []))
         d = stats(cats.get("D", [])); e = stats(cats.get("E", []))
+        f = stats(cats.get("F", [])); g = stats(cats.get("G", []))
         add(f"| {model} | {pct(s['passed'], s['total'])} "
             f"| {pct(a['passed'], a['total'])} | {pct(b['passed'], b['total'])} | {pct(c['passed'], c['total'])} "
             f"| {pct(d['passed'], d['total'])} | {pct(e['passed'], e['total'])} "
+            f"| {pct(f['passed'], f['total'])} | {pct(g['passed'], g['total'])} "
             f"| {s['avg_steps']:.1f} | {s['avg_in_tok']:.0f} | {s['avg_out_tok']:.0f} "
             f"| {s['tool_err_rate']:.1f}% | {s['verify_fail_rate']:.1f}% "
             f"| {s['self_heal_rate']:.1f}% | {s['timeouts']} |")
@@ -106,7 +108,7 @@ def build_report(run_id, models):
         add("")
         add("| 任务 | 类别 | 判定 | 步数 | 输入 tok | 输出 tok | 工具失败(t/v) | 用时(s) | 原因/备注 |")
         add("|---|---|---|---|---|---|---|---|---|")
-        for cat in ("A", "B", "C", "E"):
+        for cat in ("A", "B", "C", "D", "E", "F", "G"):
             for r in sorted(cats.get(cat, []), key=lambda x: x["task_id"]):
                 mark = "通过" if r["verdict"] else "失败"
                 reason = (r.get("reason") or "")[:80].replace("|", "/")
@@ -121,7 +123,7 @@ def build_report(run_id, models):
     add("")
     found = False
     for model in sorted(models):
-        for cat in ("A", "B", "C", "E"):
+        for cat in ("A", "B", "C", "D", "E", "F", "G"):
             for r in sorted(models[model].get(cat, []), key=lambda x: x["task_id"]):
                 if r.get("verdict"):
                     continue
