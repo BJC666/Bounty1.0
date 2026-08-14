@@ -2,6 +2,9 @@ package builtin
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -76,10 +79,13 @@ func (WebFetchTool) ReadOnly() bool      { return true }
 func (WebFetchTool) Owner() tool.Owner   { return tool.Owner{Kind: "core", ID: "builtin"} }
 func (WebFetchTool) Description() string { return "Fetch a public URL; returns content as plain text." }
 func (WebFetchTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","format":"uri","maxLength":2048}},"required":["url"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","format":"uri","maxLength":2048},"proof":{"type":"boolean","description":"Attach session commitment for https"}},"required":["url"]}`)
 }
 func (WebFetchTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
-	var params struct{ URL string `json:"url"` }
+	var params struct {
+		URL   string `json:"url"`
+		Proof bool   `json:"proof"`
+	}
 	if err := json.Unmarshal(args, &params); err != nil {
 		return "", err
 	}
@@ -116,14 +122,84 @@ func (WebFetchTool) Execute(ctx context.Context, args json.RawMessage) (string, 
 	}
 	content := string(runes)
 
+	// P8-4: proof=true 时附加会话承诺（TLS 指纹 + 证书链摘要 + 时间戳 +
+	// 响应体摘要）。证明放在 <data> 边界之外——它是机器可读证据而非页面内容，
+	// 可原样喂给 DeVET /chain/mirror 的 web_proofs。
+	var proofBlock string
+	if params.Proof {
+		if u.Scheme != "https" || resp.TLS == nil {
+			return "", fmt.Errorf("proof mode requires an https response with TLS state")
+		}
+		proofJSON, err := makeSessionCommitment(u, resp.TLS, body, resp.StatusCode)
+		if err != nil {
+			return "", err
+		}
+		proofBlock = "\n\n---WEBPROOF---\n" + string(proofJSON)
+	}
+
 	// Untrusted web content is wrapped in a <data> boundary so the model can
 	// distinguish page content from instructions (BIPIA-style defense).
 	// Suspicious pages are flagged but still returned inside the boundary —
 	// marking is the defense, blocking would break legitimate fetches.
 	if hits := memory.ScanAll(content); len(hits) > 0 {
-		return WrapDataBoundary(u.String(), "[SECURITY] page content contains prompt-injection markers: "+strings.Join(hits, ", ")+"\n"+content), nil
+		return WrapDataBoundary(u.String(), "[SECURITY] page content contains prompt-injection markers: "+strings.Join(hits, ", ")+"\n"+content) + proofBlock, nil
 	}
-	return WrapDataBoundary(u.String(), content), nil
+	return WrapDataBoundary(u.String(), content) + proofBlock, nil
+}
+
+// sessionProof is the P8-4 session commitment: 真实 HTTPS 会话的可复现承诺，
+// 与 vet_webproofs/prover.py 的 attestation schema 对齐，可原样喂给 DeVET。
+type sessionProof struct {
+	Type            string `json:"type"`
+	URL             string `json:"url"`
+	Status          int    `json:"status"`
+	Timestamp       string `json:"timestamp"`
+	TLSVersion      string `json:"tls_version"`
+	CipherSuite     string `json:"cipher_suite"`
+	CertChainDigest string `json:"cert_chain_digest"`
+	BodyDigest      string `json:"body_digest"`
+	ServerName      string `json:"server_name"`
+}
+
+func tlsVersionName(v uint16) string {
+	switch v {
+	case tls.VersionTLS10:
+		return "TLS1.0"
+	case tls.VersionTLS11:
+		return "TLS1.1"
+	case tls.VersionTLS12:
+		return "TLS1.2"
+	case tls.VersionTLS13:
+		return "TLS1.3"
+	default:
+		return fmt.Sprintf("0x%04x", v)
+	}
+}
+
+// makeSessionCommitment 从一次真实 HTTPS 响应捕获会话承诺：
+// cert_chain_digest = sha256(逐证书 DER 拼接)；body_digest = sha256(响应体)；
+// 时间戳 RFC3339 UTC；TLS 版本/密码套件来自连接状态。
+func makeSessionCommitment(u *url.URL, state *tls.ConnectionState, body []byte, status int) ([]byte, error) {
+	if state == nil {
+		return nil, fmt.Errorf("no TLS state available (non-https response?)")
+	}
+	chainHash := sha256.New()
+	for _, c := range state.PeerCertificates {
+		chainHash.Write(c.Raw)
+	}
+	bodySum := sha256.Sum256(body)
+	p := sessionProof{
+		Type:            "session_commitment",
+		URL:             u.String(),
+		Status:          status,
+		Timestamp:       time.Now().UTC().Format(time.RFC3339),
+		TLSVersion:      tlsVersionName(state.Version),
+		CipherSuite:     tls.CipherSuiteName(state.CipherSuite),
+		CertChainDigest: hex.EncodeToString(chainHash.Sum(nil)),
+		BodyDigest:      hex.EncodeToString(bodySum[:]),
+		ServerName:      u.Hostname(),
+	}
+	return json.Marshal(p)
 }
 
 // WrapDataBoundary wraps untrusted content in a <data> prompt boundary.

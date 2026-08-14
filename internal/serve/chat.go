@@ -453,7 +453,7 @@ select { background: var(--bg); color: var(--cream); border: 1px solid var(--bor
 <div id="panel-chain" class="panel">
   <div class="devet-card">
     <h3>🛡️ DeVET 验证链可视化（P4-1）</h3>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:8px;">每次 task / fleet 子代理完成后，其结果会被镜像为 DeVET 委托链（身份承诺 + 授权密封 + 7 项递归检查）自动验签。下方展示最近一次验证的完整链路与责任归因。</p>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:8px;">每次 task / fleet 子代理完成后，其结果会被镜像为 DeVET 委托链（身份承诺 + 授权密封 + 8 项检查：7 项递归 + web_fetch 网络真实性证明）自动验签。下方展示最近一次验证的完整链路与责任归因。</p>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
       <button onclick="refreshDevetState()" style="background:var(--gold);color:#000;border:none;border-radius:4px;padding:6px 14px;font-weight:600;cursor:pointer;font-size:13px;">🔄 刷新验证链</button>
       <span id="devet-state-tag" style="font-size:12px;color:var(--muted);"></span>

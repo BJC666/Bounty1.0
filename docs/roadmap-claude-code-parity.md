@@ -405,14 +405,15 @@
 - 测试：cache_shape 断言更新；跑分回归。
 - 验收：输入 tok 环比再降 ≥10%（15,907 → ≤14,300）；pass@1 100% 不降。
 
-**P8-4 DeVET 真实性证明最小原型（护城河 v2 预研，与论文未来工作联动）**
+**P8-4 DeVET 真实性证明最小原型（护城河 v2 预研 ✅ 2026-08-14）**
 - 交付：①`vet_webproofs` 接口抽象（stub 实现保留，新增「会话承诺」实现：HTTPS 响应的 TLS 指纹 + 时间戳 + 服务器证书链摘要，可复现可验签，**不接 notary**，明确边界）；②web_fetch 工具 `--proof` 模式产出该承诺并喂给 `/chain/mirror`；③F 类新增 1 题「真实性证明缺失检测」（声称调用远端 API 但无证明 → 检出）。
-- 验收：F 类新增题通过；评估文档 `network-proof-upgrade.md` 补「原型实测」节（成本/收益数字）。
-- 说明：TLSNotary 完整集成列入 v2（依赖 Rust 工具链 + notary 基础设施，本轮不做）。
+- 验收：**F7 实机 PASS**（qwen 真实调用 `devet_simulate_attack(A11_webproof_missing)` → `DETECTED=YES FAULT=webproof_missing BLAME=delegation[0]`；F1–F6 无回归）；`network-proof-upgrade.md` 已补「6. 原型实测」节（复现脚本 `vet-repro/benchmarks/proto_session_commitment.py`，实测：A11 检出 0.116 ms、真实捕获 ≈2.47 s/承诺 533 B、镜像对照 a 检出 b 通过）；vet-repro 43/backend 8 新增用例全绿。
+- 交付：①`vet_webproofs/prover.py` 会话承诺（证书链摘要+TLS 指纹+时间戳+响应体摘要，`verify_session_commitment` 自洽验签，stub 保留）；②Bounty `web_fetch --proof`（https 捕获 TLS 状态输出 `---WEBPROOF---` JSON）+ `MirrorAgent.WebCalls/WebProofs` 透传 `/chain/mirror`；③验证器新增 Check 5b（web_fetch 无证明 → `webproof_missing`，7 项递归 → 8 项检查）+ A11 攻击（CTF 旗 `flag{devet_a11_blocked}`）。
+- 说明：TLSNotary 完整集成列入 v2（依赖 Rust 工具链 + notary 基础设施，本轮不做）；会话承诺为自洽级证明（可复现可验签），非 notary 可公证级。
 
-**P8-5 答辩/论文三证据链打包**
+**P8-5 答辩/论文三证据链打包（✅ 2026-08-14）**
 - 交付：`docs/defense-evidence.md`——①Eval 曲线（P0 基线→P7 全 run 对比表 + matplotlib 图）；②DeVET 归因（8 类攻击 800/800、fleet 压测、归因路径样例）；③防护真实性（权限门/沙箱/泄露扫描测试清单 + 实测触发记录）；与「科研汇报-网页版」PPT 联动（P8-4 完成后更新 DeVET 板块）。
-- 验收：三证据链文档 + 图入库；网页版对应板块引用到位。
+- 验收：`docs/defense-evidence.md` 三证据链 + `docs/eval/defense-eval-curve.png`（14 节点 P0→P8-r7 双图，`scripts/eval/defense_curve.py` 一键复现）入库；①②③ 数字全部来自实测（800/800、fleet p99 26.3–32.9ms、归因路径样例、防护测试清单+5 条实测触发记录）；网页版联动要点已写入文档末节。
 
 **P8-6 Eval 周报机制（长期护栏落地 ✅ 2026-08-14）**
 - 交付：`scripts/eval/weekly.py`——全量 49 题跑分 → history.csv 追加 → 生成周报 md（环比 pass@1/步数/token/失败率，倒退标红）；CI smoke 已在 P4-3 挂载（保持）。

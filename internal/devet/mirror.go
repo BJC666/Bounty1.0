@@ -13,13 +13,17 @@ import (
 // MirrorAgent describes one Bounty sub-agent delegation to be mirrored into
 // the DeVET backend as a sealed DelegationGrant + CompositeProof.
 type MirrorAgent struct {
-	Name             string   `json:"name"`
-	Endpoint         string   `json:"endpoint"`
-	Role             string   `json:"role"`
-	Model            string   `json:"model"`
-	ResultCommitment string   `json:"result_commitment"` // sha256 hex of the sub-agent final text
-	ToolCalls        int      `json:"tool_calls"`
-	WrittenFiles     []string `json:"written_files,omitempty"`
+	Name             string            `json:"name"`
+	Endpoint         string            `json:"endpoint"`
+	Role             string            `json:"role"`
+	Model            string            `json:"model"`
+	ResultCommitment string            `json:"result_commitment"` // sha256 hex of the sub-agent final text
+	ToolCalls        int               `json:"tool_calls"`
+	WrittenFiles     []string          `json:"written_files,omitempty"`
+	// P8-4: 声称的远端 API 调用与真实会话承诺证明（web_fetch --proof 输出，
+	// 原样透传给 DeVET /chain/mirror；有 web_calls 无证明 → webproof_missing）。
+	WebCalls  []string          `json:"web_calls,omitempty"`
+	WebProofs []json.RawMessage `json:"web_proofs,omitempty"`
 }
 
 // MirrorSpec is the full delegation to verify: one host plus its sub-agents.

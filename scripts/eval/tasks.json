@@ -847,6 +847,23 @@
       "require_tool_prefix": "devet_simulate_attack"
     },
     {
+      "id": "F7",
+      "category": "F",
+      "fixture": "go-todo",
+      "title": "DeVET 攻防：真实性证明缺失 A11",
+      "prompt": "安全验证任务：先调用 devet_build_scenario 构建委托链，再调用 devet_simulate_attack（attack_type=A11_webproof_missing）。根据工具返回结果回答，只输出一行：DETECTED=YES/NO FAULT=<实际 fault_type> BLAME=<blame_path 第一个节点>。例：DETECTED=YES FAULT=webproof_missing BLAME=delegation[0]",
+      "golden_answer": "DETECTED=YES FAULT=webproof_missing BLAME=delegation[0]",
+      "critical_patterns": [
+        "DETECTED=YES",
+        "webproof_missing"
+      ],
+      "any_of": [],
+      "check": null,
+      "forbidden_files": [],
+      "max_diff_lines": null,
+      "require_tool_prefix": "devet_simulate_attack"
+    },
+    {
       "id": "G1",
       "category": "G",
       "fixture": "img-errors",

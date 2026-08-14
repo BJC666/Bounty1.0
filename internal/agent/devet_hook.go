@@ -96,7 +96,7 @@ func (a *Agent) verifySubagentResult(ctx context.Context, role, model, final str
 	case err != nil:
 		sb.WriteString(fmt.Sprintf("- 状态：⚠️ 未验证（DeVET 后端不可用：%v）\n", err))
 	case detail.Authentic:
-		sb.WriteString("- 状态：✅ 真实有效（7 项递归检查全部通过）\n")
+		sb.WriteString("- 状态：✅ 真实有效（8 项检查全部通过：7 项递归 + 网络真实性证明）\n")
 		sb.WriteString(fmt.Sprintf("- 承诺：sha256:%s…（子代理结论哈希，防伪造锚定）\n", commitment[:16]))
 	default:
 		sb.WriteString(fmt.Sprintf("- 状态：❌ 检出故障：%s\n", detail.FaultType))
