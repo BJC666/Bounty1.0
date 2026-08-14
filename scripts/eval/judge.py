@@ -261,12 +261,19 @@ def main():
     ap.add_argument("--tasks", type=Path, default=EVAL_DIR / "tasks.json")
     ap.add_argument("--list-failed", action="store_true",
                     help="只打印判定失败的任务 id（逗号分隔），供 runner --redo-failed 组合重跑")
+    ap.add_argument("--models", default=None,
+                    help="逗号分隔模型列表（如 qwen/qwen3.8-max）；默认判定全部模型")
     args = ap.parse_args()
+    want_models = None
+    if args.models:
+        want_models = {m.strip().replace("/", "__") for m in args.models.split(",") if m.strip()}
 
     tasks = {t["id"]: t for t in load_json(args.tasks)["tasks"]}
     failed_ids = []
     for model_dir in sorted(args.run.iterdir()):
         if not model_dir.is_dir() or model_dir.name.startswith("."):
+            continue
+        if want_models is not None and model_dir.name not in want_models:
             continue
         for task_dir in sorted(model_dir.iterdir()):
             if not task_dir.is_dir():

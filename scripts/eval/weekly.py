@@ -92,7 +92,7 @@ def build_weekly(run_id, model, run_dir, prev):
     add = lines.append
     add(f"# Bounty Eval 周报（{datetime.now().strftime('%Y-%m-%d')}）")
     add("")
-    add(f"- run_id：`{run_id}`（模型 {model}，49 题全量）")
+    add(f"- run_id：`{run_id}`（模型 {model}，50 题全量）")
     add(f"- 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
     add("")
 
