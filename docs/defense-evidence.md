@@ -109,7 +109,7 @@
 
 - `go build ./...` + `go vet ./...` + `go test ./...` 全绿；`python scripts/eval/selfcheck.py` 50/50（含新增 F7）
 - DeVET：`pytest backend vet-repro` 48 passed（含会话承诺 9 + A11 2 + backend 3 新增）
-- Eval 周报机制（P8-6）：`docs/eval/weekly-p82-r7.md`，环比标红逻辑已离线验证
+- Eval 周报机制（P8-6）：2026-08-14 交付（weekly-p82-r7 环比无倒退），2026-08-18 按用户要求移除周报机制
 
 ---
 
