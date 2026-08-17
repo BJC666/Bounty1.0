@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -108,6 +110,19 @@ func (b *BashTool) Execute(ctx context.Context, args json.RawMessage) (string, e
 		// （平台差异封装在 sysproc_windows.go / sysproc_other.go）。
 		cmd = exec.Command(shell)
 		applyWindowsCmdLine(cmd, shell, shellFlag, command)
+		if !isASCII(command) {
+			// 非 ASCII（中文路径/中文参数）命令：cmd /c 的引号剥离规则
+			// 会把 "C:\...\python.exe" -c "中文" 拆坏，且命令行经 ANSI
+			// 代码页重编码会损坏中文。改为写入临时 UTF-8 .cmd 文件执行：
+			// 文件首行 chcp 65001 统一代码页，cmd 按批处理规则解析引号，
+			// 中文参数经 Unicode 传递到子进程（936 机器上同样自洽）。
+			// 临时文件位于系统 %TEMP%（ASCII 无空格路径），无需引号。
+			if file, cleanup, err := writeUTF8CmdFile(command); err == nil {
+				cmd = exec.Command(shell)
+				applyWindowsCmdLine(cmd, shell, "/d /s /c", file)
+				defer cleanup()
+			}
+		}
 	} else {
 		cmd = exec.Command(shell, shellFlag, command)
 	}
@@ -253,6 +268,36 @@ func decodeOutput(out []byte) string {
 		}
 	}
 	return string(out)
+}
+
+// isASCII reports whether s contains only ASCII bytes.
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// writeUTF8CmdFile writes command into a temp UTF-8 .cmd file whose first line
+// pins the code page to 65001, and returns the file path plus a cleanup func.
+// cmd.exe parses batch files line-by-line with the active code page; pinning
+// chcp 65001 makes UTF-8 batch content correct on both 65001 and 936 systems,
+// and sidesteps cmd /c's first-quote-stripping rule entirely.
+func writeUTF8CmdFile(command string) (string, func(), error) {
+	dir, err := os.MkdirTemp("", "bounty-cmd-")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	path := filepath.Join(dir, "run.cmd")
+	content := "@chcp 65001 >nul\r\n" + command + "\r\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return path, cleanup, nil
 }
 
 type TimeoutError struct {
